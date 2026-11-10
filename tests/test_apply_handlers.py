@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+from contextlib import contextmanager
+from unittest import mock
 
 from soaplun import apply as apply_module
 from soaplun.apply import (
@@ -34,6 +36,51 @@ class FakeSession:
             if command == name:
                 return content
         return None
+
+
+class ApplyParallelTests(unittest.TestCase):
+    def test_parallel_actions_report_all_results(self):
+        config = mock.Mock()
+        config.current_profile.return_value = "p"
+
+        @contextmanager
+        def context():
+            yield "p"
+
+        config.profile_context.side_effect = lambda profile: context()
+        executed = []
+        lock = __import__("threading").Lock()
+
+        def handler(session, config, payload):
+            with lock:
+                executed.append(payload["name"])
+            return "ok"
+
+        actions = [
+            {
+                "id": "modify_account:u%d@example.com" % index,
+                "kind": "modify_account",
+                "target": "u%d@example.com" % index,
+                "payload": {"name": "u%d@example.com" % index},
+            }
+            for index in range(4)
+        ]
+        with mock.patch.object(
+            apply_module, "ZimbraSession", side_effect=lambda *a, **k: object()
+        ), mock.patch.dict(
+            apply_module.HANDLERS, {"modify_account": handler}
+        ), mock.patch.object(
+            apply_module, "_backup_object", return_value={}
+        ), mock.patch.object(
+            apply_module, "_backup", return_value=""
+        ):
+            items, counters, passwords = apply_module._apply_actions_parallel(
+                config, actions, 4, None, None, "stamp", {}, 4
+            )
+        self.assertEqual(len(executed), 4)
+        self.assertEqual(counters["ok"], 4)
+        self.assertEqual(len(items), 4)
+        self.assertEqual(passwords, {})
 
 
 class ApplyHandlerTests(unittest.TestCase):

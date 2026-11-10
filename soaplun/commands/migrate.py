@@ -231,6 +231,7 @@ def _run_cos(config, args, users):
         dry_run=args.dry_run,
         options=options,
         accounts=users,
+        parallelism=args.parallelism,
         cancel=cli._JOB_STOP_EVENT,
     )
     return cli._print_summary("COS", report)

@@ -53,6 +53,7 @@
 - `--retry-failed` conserve le CSV obligatoire, filtre les echecs par type quand le rapport le fournit, et retombe sur `account` pour les anciens rapports.
 - `server inventory` accepte `--no-stats` pour ignorer `GetMailbox` et `--parallelism` pour parall?liser la collecte des comptes (d?faut : 1).
 - `--parallelism` est disponible sur toutes les commandes `provision` et `migrate`, avec une valeur par defaut de 1.
+- `apply_plan` parallelise les actions independantes de meme type (par exemple les `modify_account` de `migrate ... cos`) lorsque `--parallelism` est superieur a 1.
 - `--json` est accepte uniquement avec `--dry-run` et restitue les rapports de simulation collectes.
 - Un code de retour `2` signale une reussite partielle (echec ou traitement partiel d'un compte) ; `1` reste une erreur globale.
 - `--keep-tgz` et `--keep-tgz-days` gardent le comportement existant.

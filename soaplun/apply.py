@@ -10,6 +10,7 @@ import string
 import secrets
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
@@ -473,6 +474,174 @@ def plan_options_for_run(
     return effective
 
 
+def _finish_report(
+    config,
+    plan,
+    dry_run,
+    stamp,
+    total,
+    counters,
+    items,
+    generated_passwords,
+):
+    report = {
+        "created_at": now_iso(),
+        "dry_run": dry_run,
+        "profile": config.current_profile(),
+        "profile_name": config.profile_name(),
+        "plan_created_at": plan.get("created_at", ""),
+        "source_host": config_module.store_host(config.connection("source")),
+        "source_proxy_host": config_module.proxy_host(config.connection("source")),
+        "destination_host": config_module.store_host(config.connection("destination")),
+        "destination_proxy_host": config_module.proxy_host(
+            config.connection("destination")
+        ),
+        "total": total,
+        "summary": counters,
+        "items": items,
+    }
+    if not dry_run:
+        path = config.storage_path("report_path") / ("apply-%s.json" % stamp)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(report, handle, ensure_ascii=False, indent=1)
+            handle.write("\n")
+        report["report_path"] = str(path)
+    if generated_passwords:
+        report["_generated_passwords"] = generated_passwords
+    return report
+
+
+def _apply_actions_parallel(
+    config,
+    actions,
+    total,
+    progress,
+    cancel,
+    stamp,
+    options,
+    workers,
+):
+    results = [None] * total
+    profile = config.current_profile()
+    local = threading.local()
+    progress_lock = threading.Lock()
+    completed = 0
+
+    def session():
+        if not hasattr(local, "session"):
+            local.session = ZimbraSession(
+                config, "destination", readonly=False
+            )
+        return local.session
+
+    def task(index, item):
+        _RUN_OPTIONS.value = options
+        with config.profile_context(profile):
+            kind = item.get("kind", "")
+            target = item.get("target", "")
+            record = {
+                "id": item.get("id"),
+                "kind": kind,
+                "type": action_type(kind),
+                "target": target,
+                "description": item.get("description", ""),
+                "started_at": now_iso(),
+            }
+            if cancel is not None and cancel.is_set():
+                record.update(
+                    {
+                        "status": "skipped",
+                        "error": "Annule par l'utilisateur",
+                    }
+                )
+                return index, record, ""
+            handler = HANDLERS.get(kind)
+            if handler is None:
+                record.update(
+                    {
+                        "status": "skipped",
+                        "error": "Type d'action inconnu : %s" % kind,
+                    }
+                )
+                return index, record, ""
+            started = time.time()
+            try:
+                _RUN_OPTIONS.last_random = None
+                backup_kind = BACKUP_KINDS.get(kind)
+                if backup_kind:
+                    previous = _backup_object(
+                        session(), backup_kind, target
+                    )
+                    record["backup"] = _backup(
+                        config, stamp, backup_kind, target, previous
+                    )
+                message = handler(
+                    session(), config, item.get("payload") or {}
+                )
+                password = getattr(_RUN_OPTIONS, "last_random", None)
+                record.update({"status": "ok", "message": message})
+                return index, record, str(password) if password else ""
+            except Exception as exc:  # noqa: BLE001 - reported per action
+                if _is_already_exists(exc):
+                    record.update(
+                        {
+                            "status": "skipped",
+                            "message": "Deja present sur la destination",
+                        }
+                    )
+                else:
+                    record.update(
+                        {"status": "failed", "error": describe_error(exc)}
+                    )
+                return index, record, ""
+            finally:
+                record["seconds"] = round(time.time() - started, 2)
+
+    def completed_task(index, record, password):
+        nonlocal completed
+        results[index - 1] = record
+        if password:
+            record["_generated_password"] = password
+        with progress_lock:
+            completed += 1
+            if progress:
+                progress(
+                    completed,
+                    total,
+                    "%s : %s"
+                    % (record.get("kind", ""), record.get("target", "")),
+                )
+
+    if progress:
+        progress(0, total, "En cours")
+    with ThreadPoolExecutor(max_workers=min(workers, max(1, total))) as executor:
+        futures = {
+            executor.submit(task, index, item): index
+            for index, item in enumerate(actions, start=1)
+        }
+        for future in as_completed(futures):
+            index, record, password = future.result()
+            completed_task(index, record, password)
+
+    generated_passwords = {}
+    counters = {"ok": 0, "failed": 0, "skipped": 0, "planned": 0}
+    items = []
+    for record in results:
+        if record is None:
+            continue
+        password = record.pop("_generated_password", "")
+        if password:
+            generated_passwords[str(record.get("target", ""))] = password
+        status = record.get("status", "failed")
+        if status in counters:
+            counters[status] += 1
+        else:
+            counters["failed"] += 1
+        items.append(record)
+    return items, counters, generated_passwords
+
+
 def apply_plan(
     config: config_module.Config,
     plan: Dict[str, Any],
@@ -483,6 +652,7 @@ def apply_plan(
     options: Optional[Dict[str, Any]] = None,
     kinds: Optional[Iterable[str]] = None,
     accounts: Optional[Iterable[str]] = None,
+    parallelism: int = 1,
 ) -> Dict[str, Any]:
     """Execute the create/update actions of ``plan`` on the destination."""
     check_safety(config, plan)
@@ -498,6 +668,7 @@ def apply_plan(
             stop_on_error=stop_on_error,
             kinds=kinds,
             accounts=accounts,
+            parallelism=parallelism,
         )
     finally:
         _RUN_OPTIONS.value = None
@@ -512,6 +683,7 @@ def _apply_plan_inner(
     stop_on_error: bool = False,
     kinds: Optional[Iterable[str]] = None,
     accounts: Optional[Iterable[str]] = None,
+    parallelism: int = 1,
 ) -> Dict[str, Any]:
     actions = plan.get("actions", [])
     if kinds is not None:
@@ -533,6 +705,30 @@ def _apply_plan_inner(
     total = len(actions)
     session = ZimbraSession(config, "destination", readonly=False)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    workers = max(1, int(parallelism or 1))
+    parallel = (
+        workers > 1
+        and total > 1
+        and not dry_run
+        and not stop_on_error
+        and len({item.get("kind") for item in actions}) == 1
+        and not any(item.get("depends_on") for item in actions)
+    )
+    if parallel:
+        items, counters, generated_passwords = _apply_actions_parallel(
+            config,
+            actions,
+            total,
+            progress,
+            cancel,
+            stamp,
+            _current_options(),
+            workers,
+        )
+        return _finish_report(
+            config, plan, dry_run, stamp, total, counters, items,
+            generated_passwords,
+        )
 
     items: List[Dict[str, Any]] = []
     generated_passwords: Dict[str, str] = {}
@@ -628,30 +824,9 @@ def _apply_plan_inner(
             items.append(record)
 
     if progress:
-        progress(total, total, "Terminé")
+        progress(total, total, "Termin?")
 
-    report = {
-        "created_at": now_iso(),
-        "dry_run": dry_run,
-        "profile": config.current_profile(),
-        "profile_name": config.profile_name(),
-        "plan_created_at": plan.get("created_at", ""),
-        "source_host": config_module.store_host(config.connection("source")),
-        "source_proxy_host": config_module.proxy_host(config.connection("source")),
-        "destination_host": config_module.store_host(config.connection("destination")),
-        "destination_proxy_host": config_module.proxy_host(config.connection("destination")),
-        "total": total,
-        "summary": counters,
-        "items": items,
-    }
-    if not dry_run:
-        path = config.storage_path("report_path") / ("apply-%s.json" % stamp)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(report, handle, ensure_ascii=False, indent=1)
-            handle.write("\n")
-        report["report_path"] = str(path)
-    if generated_passwords:
-        report["_generated_passwords"] = generated_passwords
-    return report
-
+    return _finish_report(
+        config, plan, dry_run, stamp, total, counters, items,
+        generated_passwords,
+    )

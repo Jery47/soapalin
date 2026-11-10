@@ -565,6 +565,7 @@ def _run_create(
         kinds=diff_module.PROVISIONING_KINDS,
         accounts=users,
         options=options,
+        parallelism=parallelism,
         cancel=cancel,
     )
     if not dry_run:
@@ -777,6 +778,7 @@ def _run_objects(config, args, options, cancel=None) -> int:
             dry_run=args.dry_run,
             kinds=diff_module.PROVISIONING_KINDS,
             options=options,
+            parallelism=getattr(args, "parallelism", 1),
             cancel=cancel,
         )
         failures += _print_summary(category, report)

@@ -339,7 +339,7 @@ class NewCliParserTests(unittest.TestCase):
             dry_run=True,
             keep_tgz=False,
             keep_tgz_days=0,
-            parallelism=1,
+            parallelism=5,
             mapping_domain="",
             mapping_host="",
             differential=None,
@@ -383,6 +383,7 @@ class NewCliParserTests(unittest.TestCase):
                 0,
             )
         passed = apply.call_args.args[1]
+        self.assertEqual(apply.call_args.kwargs["parallelism"], 5)
         self.assertEqual(len(passed["actions"]), 1)
         self.assertEqual(passed["actions"][0]["payload"]["attrs"], {})
         self.assertEqual(passed["actions"][0]["payload"]["cos_name"], "COS1")

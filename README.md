@@ -176,7 +176,7 @@ Les états et journaux sont dans `data/jobs/<id>/`.
 ```text
 --differential [YYYY-MM-DD]
 --retry-failed [RAPPORT]
---parallelism N          (d?faut : 1)
+--parallelism N          (d?faut : 1, actions independantes)
 --keep-tgz [true|false]
 --keep-tgz-days N
 --mapping-domain CSV

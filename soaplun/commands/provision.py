@@ -141,5 +141,6 @@ def run(args):
             args.dry_run,
             destination_label=args.to_label,
             cancel=cli._JOB_STOP_EVENT,
+            parallelism=args.parallelism,
         )
     raise RuntimeError("Sous-commande provision inconnue : %s" % command)
