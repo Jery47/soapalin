@@ -710,7 +710,7 @@ def _run_import(
             parts=["permissions"],
         )
         failures += _print_summary("Droits", report)
-    return 1 if failures else 0
+    return 2 if failures else 0
 
 
 def _run_objects(config, args, options, cancel=None) -> int:
@@ -829,7 +829,7 @@ def _run_objects(config, args, options, cancel=None) -> int:
                 "AVERTISSEMENT : aucune ressource correspondante dans l'inventaire source.",
                 file=sys.stderr,
             )
-    return failures
+    return 2 if failures else 0
 
 
 def _retry_users(

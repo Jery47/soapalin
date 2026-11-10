@@ -51,7 +51,8 @@
 - La date est transmise au backend existant pour les mails et les elements structures (calendar/contacts/tasks) via les requetes de recherche et les exports ; les types sans date applicable (settings, tags, etc.) ne sont pas filtres.
 - `--differential` resynchronise les tags via `sync_tags`.
 - `--retry-failed` conserve le CSV obligatoire, filtre les echecs par type quand le rapport le fournit, et retombe sur `account` pour les anciens rapports.
-- `--json` est accepte uniquement avec `--dry-run`.
+- `--json` est accepte uniquement avec `--dry-run` et restitue les rapports de simulation collectes.
+- Un code de retour `2` signale une reussite partielle (echec ou traitement partiel d'un compte) ; `1` reste une erreur globale.
 - `--keep-tgz` et `--keep-tgz-days` gardent le comportement existant.
 - Les options globales doivent etre placees avant la sous-commande.
 - Les jobs restent en arriere-plan par defaut ; `--foreground` permet l'execution bloquante.

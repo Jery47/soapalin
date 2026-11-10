@@ -364,7 +364,7 @@ def run(args):
             failures += _run_resource(config, args, resource_elements)
         if "members" in args.elements:
             failures += _run_dl(config, args, ["members"])
-        return failures
+        return 2 if failures else 0
     if args.type == "account":
         return _run_account(config, args, args.elements)
     if args.type == "resource":
