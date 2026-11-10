@@ -62,7 +62,7 @@ log "Termine"
 cat <<EOF
 
 Commande CLI :
-  ${APP_DIR}/soapalin --server-action list
+  ${APP_DIR}/soapalin server list
 
 Fichiers :
   Configuration : ${APP_DIR}/config/

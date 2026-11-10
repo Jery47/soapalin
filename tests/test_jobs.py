@@ -16,7 +16,7 @@ class JobStoreTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_create_list_and_stop(self):
-        spec = self.store.create(["--create-user", "--list-user", "users.csv"])
+        spec = self.store.create(["provision", "account", "users.csv"])
         self.assertTrue(spec["id"])
         states = self.store.list()
         self.assertEqual(len(states), 1)
@@ -26,7 +26,7 @@ class JobStoreTests(unittest.TestCase):
         self.assertTrue(self.store.stop_requested(spec["id"]))
 
     def test_launch_sets_running_state(self):
-        spec = self.store.create(["--import-user", "mail"])
+        spec = self.store.create(["migrate", "users.csv", "mail", "--type", "account"])
 
         class Process:
             pid = 1234
@@ -40,8 +40,8 @@ class JobStoreTests(unittest.TestCase):
         self.assertEqual(state["pid"], 1234)
 
     def test_selected_by_prefix(self):
-        first = self.store.create(["--import-user", "mail"])
-        second = self.store.create(["--import-user", "share"])
+        first = self.store.create(["migrate", "users.csv", "mail", "--type", "account"])
+        second = self.store.create(["migrate", "users.csv", "share", "--type", "account"])
         self.assertEqual(self.store.selected(first["id"])[0]["id"], first["id"])
         self.assertEqual(len(self.store.selected("all")), 2)
         self.assertEqual(self.store.selected(second["id"])[0]["id"], second["id"])

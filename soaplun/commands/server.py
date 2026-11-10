@@ -41,7 +41,6 @@ def add_parser(subparsers):
 def run(args):
     from .. import cli
     from ..config import Config
-    from ..connections import ZimbraSession, describe_error
 
     config = Config()
     command = args.server_command
@@ -95,19 +94,7 @@ def run(args):
         cli._out("Serveur renomme : %s -> %s" % (args.label, new_label))
         return 0
     if command == "test":
-        server = config.server(args.label)
-        config.use_server(args.label)
-        session = ZimbraSession(config, server["type"], readonly=True)
-        try:
-            result = session.test()
-        except Exception as exc:  # noqa: BLE001
-            cli._out(
-                "%s : ECHEC - %s" % (args.label, describe_error(exc)),
-                file=__import__("sys").stderr,
-            )
-            return 1
-        cli._out(json.dumps(result, indent=2, ensure_ascii=False))
-        return 0 if result.get("ok") else 1
+        return cli._run_server_test(config, args.label)
     if command == "inventory":
         import threading
 

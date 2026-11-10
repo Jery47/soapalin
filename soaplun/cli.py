@@ -374,12 +374,12 @@ def _load_snapshots(
         commands = []
         if not source:
             commands.append(
-                "  soapalin --server-action inventory --server-label %s"
+                "  soapalin server inventory %s"
                 % source_label
             )
         if not destination:
             commands.append(
-                "  soapalin --server-action inventory --server-label %s"
+                "  soapalin server inventory %s"
                 % destination_label
             )
         raise RuntimeError(
@@ -413,7 +413,7 @@ def _build_plan(
     ]
     if missing:
         _out(
-            "AVERTISSEMENT : %d compte(s) de --list-user sont introuvables "
+            "AVERTISSEMENT : %d compte(s) du CSV sont introuvables "
             "sur la source : %s"
             % (len(missing), ", ".join(missing)),
             file=sys.stderr,
@@ -470,7 +470,7 @@ def _validate_target_domains(config, users, options, destination_label: str) -> 
     )
     if not snapshot:
         raise RuntimeError(
-            "Inventaire destination introuvable : lancez --server-action inventory."
+            "Inventaire destination introuvable : lancez 'soapalin server inventory LABEL'."
         )
     available = {
         str(domain.get("name") or "").lower()
@@ -492,7 +492,7 @@ def _validate_target_domains(config, users, options, destination_label: str) -> 
         return
     raise RuntimeError(
         "Domaines absents de l'inventaire destination : %s. "
-        "Creez-les avec --create-domain ou relancez l'inventaire destination."
+        "Creez-les avec 'provision domain' ou relancez l'inventaire destination."
         % ", ".join(missing)
     )
 
@@ -582,18 +582,6 @@ def _run_import(
     elif "tags" in steps or tag_contents:
         _out("Simulation des definitions de tags.")
         tags_ready = True
-    if "cos" in steps:
-        report = settings_module.copy_account_settings(
-            config,
-            plan,
-            progress=_progress,
-            only=users,
-            dry_run=args.dry_run,
-            options=options,
-            cancel=cancel,
-            parts=["cos"],
-        )
-        failures += _print_summary("COS", report)
     if contents:
         if args.dry_run:
             _out(
@@ -694,7 +682,7 @@ def _run_import(
         if ignored:
             _out(
                 "AVERTISSEMENT : %d partage(s) ignore(s) car le compte cible "
-                "n'existe pas encore. Relancez 'soapalin --import-user share' "
+                "n'existe pas encore. Relancez 'soapalin migrate CSV share --type account' "
                 "une fois tous les comptes crees." % ignored,
                 file=sys.stderr,
             )
@@ -1010,75 +998,6 @@ def _run_server_inventory(config, label: str, cancel=None) -> int:
     return 0
 
 
-def _run_server_action(config, args, cancel=None) -> int:
-    action = args.server_action
-    label = args.server_label
-    if action == "list":
-        servers = config.servers()
-        if not servers:
-            _out("Aucun serveur configure.")
-            return 0
-        for server in servers.values():
-            _out(
-                "%-28s %-12s %s"
-                % (
-                    server["label"],
-                    server["type"],
-                    server.get("connection", {}).get("store_host", ""),
-                )
-            )
-        return 0
-    if action == "show":
-        if label:
-            _out(
-                json.dumps(
-                    _server_public(config.server(label)),
-                    indent=2,
-                    ensure_ascii=False,
-                )
-            )
-            return 0
-        servers = config.servers()
-        if not servers:
-            _out("Aucun serveur configure.")
-            return 0
-        for server in servers.values():
-            _out(
-                json.dumps(
-                    _server_public(server), indent=2, ensure_ascii=False
-                )
-            )
-        return 0
-    if action == "create":
-        if not args.server_type:
-            raise RuntimeError("--server-type est obligatoire pour create.")
-        if not label:
-            raise RuntimeError("--server-label est obligatoire pour create.")
-        server = config.create_server(label, args.server_type)
-        _out(
-            "Serveur cree : %s (%s)\nFichier : %s"
-            % (server["label"], server["type"], server["path"])
-        )
-        return 0
-    if not label:
-        raise RuntimeError("--server-label est obligatoire pour %s." % action)
-    if action == "remove":
-        config.remove_server(label)
-        _out("Serveur supprime : %s" % label)
-        return 0
-    if action == "rename":
-        if not args.new_label:
-            raise RuntimeError("--new-label est obligatoire pour rename.")
-        new_label = config.rename_server(label, args.new_label)
-        _out("Serveur renomme : %s -> %s" % (label, new_label))
-        return 0
-    if action == "test":
-        return _run_server_test(config, label)
-    if action == "inventory":
-        return _run_server_inventory(config, label, cancel=cancel)
-    raise RuntimeError("Action serveur inconnue : %s" % action)
-
-
 def _launch_job(argv, args) -> int:
     config = config_module.Config()
     store = jobs_module.JobStore(config)
@@ -1092,9 +1011,9 @@ def _launch_job(argv, args) -> int:
         _out("ERREUR : lancement du job impossible : %s" % describe_error(exc), file=sys.stderr)
         return 1
     _out("Job lance : %s" % spec["id"])
-    _out("Statut  : soapalin --jobs %s --jobs-action status" % spec["id"])
-    _out("Suivi   : soapalin --jobs %s --jobs-action live" % spec["id"])
-    _out("Arret   : soapalin --jobs %s --jobs-action stop" % spec["id"])
+    _out("Statut  : soapalin job status %s" % spec["id"])
+    _out("Suivi   : soapalin job live %s" % spec["id"])
+    _out("Arret   : soapalin job stop %s" % spec["id"])
     return 0
 
 

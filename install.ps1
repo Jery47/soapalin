@@ -165,7 +165,7 @@ if ($LASTEXITCODE -ne 0) { Fail "L'installation des dependances a echoue." }
 
 Write-Step "Termine"
 Write-Host "Commande CLI :"
-Write-Host "  $(Join-Path $InstallDir 'soapalin.cmd') --server-action list"
+Write-Host "  $(Join-Path $InstallDir 'soapalin.cmd') server list"
 Write-Host ""
 Write-Host "Configuration : $(Join-Path $InstallDir 'config')"
 Write-Host "Donnees       : $(Join-Path $InstallDir 'data')"
