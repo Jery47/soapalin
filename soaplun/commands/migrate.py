@@ -192,12 +192,21 @@ def _run_cos(config, args, users):
         for item in destination.get("cos", [])
         if item.get("name")
     }
+    destination_accounts = {
+        str(item.get("name") or "").lower()
+        for item in destination.get("accounts", [])
+        if item.get("name")
+    }
     actions = []
     missing = set()
     for item in plan.get("actions", []):
         if item.get("kind") != "modify_account":
             continue
         payload = dict(item.get("payload") or {})
+        if payload.get("after_create"):
+            continue
+        if str(item.get("target") or "").lower() not in destination_accounts:
+            continue
         cos_name = str(payload.get("cos_name") or "")
         if not cos_name:
             continue

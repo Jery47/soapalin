@@ -26,6 +26,7 @@
 
 ### Anciens flags non couverts directement
 
+- `provision account` inclut la COS dans `CreateAccount` et ajoute un `modify_account` dependant de la creation pour confirmer la COS.
 - `cos` est de nouveau un element de `migrate` pour affecter la COS aux comptes existants ; `provision cos` cree la COS sur la destination.
 - `--import-cos`, `--import-dl`, `--import-distribution-lists`, `--create-resource`, `--import-resource`, `--label` : alias supprimes.
 - `--sync-tags`, `--force-sync-tags`, `--since`, `--incremental`, `--diff-user`, sous-commande `diff` : supprimes.

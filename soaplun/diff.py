@@ -929,6 +929,24 @@ def generate_plan(
                     risk="normal" if (fixed_password or random_password) else "high",
                 )
             )
+            if cos_name:
+                actions.append(
+                    action(
+                        "modify_account",
+                        target_name,
+                        "Appliquer la COS %s a %s"
+                        % (cos_name, target_name),
+                        {
+                            "name": target_name,
+                            "attrs": {},
+                            "cos_name": cos_name,
+                            "source_name": source_name,
+                            "after_create": True,
+                            "changes": ["COS -> %s" % cos_name],
+                        },
+                        depends_on=["create_account:%s" % key],
+                    )
+                )
             alias_action_ids = []
             for alias in alias_list:
                 alias_action_ids.append("add_alias:%s" % alias.lower())

@@ -210,6 +210,15 @@ class DiffTests(unittest.TestCase):
         self.assertNotIn("zimbraId", payload["attrs"])
         self.assertNotIn("zimbraMailAlias", payload["attrs"])
 
+    def test_new_account_gets_cos_assignment_after_creation(self):
+        actions = self.target("modify_account", "alice@dst.fr")
+        self.assertEqual(len(actions), 1)
+        payload = actions[0]["payload"]
+        self.assertTrue(payload["after_create"])
+        self.assertEqual(payload["cos_name"], "staff")
+        self.assertEqual(payload["attrs"], {})
+        self.assertIn("create_account:alice@dst.fr", actions[0]["depends_on"])
+
     def test_alias_mapped(self):
         actions = self.target("add_alias", "alice.old@dst.fr")
         self.assertEqual(len(actions), 1)

@@ -90,6 +90,8 @@ soapalin provision account users.csv --from src1 --to dst1 --random-password --k
 --mapping-host CSV
 ```
 
+`provision account` applique la COS source d?s la cr?ation du compte, puis ajoute une action `modify_account` pour confirmer la COS apr?s cr?ation.
+
 ## Migration
 
 ```bash

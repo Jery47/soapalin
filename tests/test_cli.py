@@ -368,7 +368,7 @@ class NewCliParserTests(unittest.TestCase):
         with mock.patch.object(
             cli,
             "_load_snapshots",
-            return_value=({}, {"cos": [{"name": "COS1"}]}),
+            return_value=({}, {"cos": [{"name": "COS1"}], "accounts": [{"name": "u@example.com"}]}),
         ), mock.patch.object(
             cli, "_base_options", return_value={}
         ), mock.patch.object(
