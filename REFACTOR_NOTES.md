@@ -88,6 +88,20 @@ options:
   --dry-run
   --foreground
 
+Options de migrate :
+  CSV|all ELEMENTS --type {account,resource,dl,all}
+    --from LABEL --to LABEL
+    --mapping-domain CSV --mapping-host CSV
+    --differential [YYYY-MM-DD]
+    --retry-failed [RAPPORT]
+    --parallelism N (defaut : 1)
+    --keep-tgz [true|false] --keep-tgz-days N
+    --json (uniquement avec --dry-run)
+  account  : mail calendar contacts tasks briefcase cos settings tags
+             filter banlist whitelist share sendas sendonbehalfof
+  resource : mail calendar
+  dl       : members
+
 Exemples:
   soapalin server add src1 --role source
   soapalin server add dst1 --role destination

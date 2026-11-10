@@ -149,6 +149,20 @@ def build_parser() -> argparse.ArgumentParser:
         description="Migration Zimbra en sous-commandes.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
+            "Options de migrate :\n"
+            "  CSV|all ELEMENTS --type {account,resource,dl,all}\n"
+            "    --from LABEL --to LABEL\n"
+            "    --mapping-domain CSV --mapping-host CSV\n"
+            "    --differential [YYYY-MM-DD]\n"
+            "    --retry-failed [RAPPORT]\n"
+            "    --parallelism N (defaut : 1)\n"
+            "    --keep-tgz [true|false] --keep-tgz-days N\n"
+            "    --json (uniquement avec --dry-run)\n"
+            "  account  : mail calendar contacts tasks briefcase cos settings tags\n"
+            "             filter banlist whitelist share sendas sendonbehalfof\n"
+            "  resource : mail calendar\n"
+            "  dl       : members\n"
+            "\n"
             "Exemples:\n"
             "  soapalin server add src1 --role source\n"
             "  soapalin server add dst1 --role destination\n"

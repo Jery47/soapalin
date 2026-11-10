@@ -201,6 +201,12 @@ class NewCliParserTests(unittest.TestCase):
             "migrate all --type all",
             "migrate users.csv mail --type account --differential",
             "job stop all",
+            "Options de migrate",
+            "--mapping-domain CSV",
+            "--differential [YYYY-MM-DD]",
+            "--retry-failed [RAPPORT]",
+            "--keep-tgz-days N",
+            "--json (uniquement avec --dry-run)",
         ):
             self.assertIn(value, help_text)
 
