@@ -85,11 +85,29 @@ options:
   --foreground
 
 Exemples:
+  soapalin server add src1 --role source
+  soapalin server add dst1 --role destination
   soapalin server list
+  soapalin server test src1
+  soapalin server inventory src1
+  soapalin provision domain domains.csv --from src1 --to dst1
+  soapalin provision cos all --from src1 --to dst1
   soapalin provision account users.csv --from src1 --to dst1 --password Secret!
+  soapalin provision account users.csv --from src1 --to dst1 --random-password --keep-admin
   soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1
-  soapalin --dry-run migrate users.csv all --type account --from src1 --to dst1
+  soapalin migrate all --type account --from src1 --to dst1
+  soapalin migrate resources.csv mail calendar --type resource --from src1 --to dst1
+  soapalin migrate lists.csv members --type dl --from src1 --to dst1
+  soapalin migrate all --type all --from src1 --to dst1
+  soapalin migrate users.csv mail --type account --differential --from src1 --to dst1
+  soapalin migrate users.csv mail --type account --differential=2026-10-01 --from src1 --to dst1
+  soapalin migrate users.csv mail --type account --retry-failed --from src1 --to dst1
+  soapalin --dry-run migrate users.csv all --type account --json --from src1 --to dst1
+  soapalin --foreground migrate users.csv mail --type account --from src1 --to dst1
   soapalin job list
+  soapalin job status JOB_ID
+  soapalin job live
+  soapalin job stop all
 ```
 
 ### `soapalin server --help`

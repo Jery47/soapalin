@@ -180,6 +180,17 @@ class NewCliParserTests(unittest.TestCase):
         cli.validate(args, parser)
         return args
 
+    def test_help_lists_command_examples(self):
+        help_text = self.parser().format_help()
+        for value in (
+            "server add src1 --role source",
+            "provision domain domains.csv",
+            "migrate all --type all",
+            "migrate users.csv mail --type account --differential",
+            "job stop all",
+        ):
+            self.assertIn(value, help_text)
+
     def test_server_add(self):
         args = self.parsed(["server", "add", "src1", "--role", "source"])
         self.assertEqual(args.command, "server")

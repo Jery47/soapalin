@@ -149,11 +149,29 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Exemples:\n"
+            "  soapalin server add src1 --role source\n"
+            "  soapalin server add dst1 --role destination\n"
             "  soapalin server list\n"
+            "  soapalin server test src1\n"
+            "  soapalin server inventory src1\n"
+            "  soapalin provision domain domains.csv --from src1 --to dst1\n"
+            "  soapalin provision cos all --from src1 --to dst1\n"
             "  soapalin provision account users.csv --from src1 --to dst1 --password Secret!\n"
+            "  soapalin provision account users.csv --from src1 --to dst1 --random-password --keep-admin\n"
             "  soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1\n"
-            "  soapalin --dry-run migrate users.csv all --type account --from src1 --to dst1\n"
+            "  soapalin migrate all --type account --from src1 --to dst1\n"
+            "  soapalin migrate resources.csv mail calendar --type resource --from src1 --to dst1\n"
+            "  soapalin migrate lists.csv members --type dl --from src1 --to dst1\n"
+            "  soapalin migrate all --type all --from src1 --to dst1\n"
+            "  soapalin migrate users.csv mail --type account --differential --from src1 --to dst1\n"
+            "  soapalin migrate users.csv mail --type account --differential=2026-10-01 --from src1 --to dst1\n"
+            "  soapalin migrate users.csv mail --type account --retry-failed --from src1 --to dst1\n"
+            "  soapalin --dry-run migrate users.csv all --type account --json --from src1 --to dst1\n"
+            "  soapalin --foreground migrate users.csv mail --type account --from src1 --to dst1\n"
             "  soapalin job list\n"
+            "  soapalin job status JOB_ID\n"
+            "  soapalin job live\n"
+            "  soapalin job stop all\n"
         ),
     )
     _add_global_options(parser)
