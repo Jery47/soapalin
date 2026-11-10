@@ -116,6 +116,47 @@ def _users(config, args, source):
     return users
 
 
+def _record_simulation(kind, plan, elements):
+    from .. import cli
+    from ..inventory import now_iso
+
+    items = []
+    for mailbox in plan.get("mailboxes", []) or []:
+        contents = [
+            {
+                "content": element,
+                "label": element,
+                "items": int(mailbox.get("messages") or 0),
+                "bytes": int(mailbox.get("size") or 0),
+            }
+            for element in elements
+        ]
+        items.append(
+            {
+                "source": mailbox.get("source", ""),
+                "destination": mailbox.get("destination", ""),
+                "type": kind,
+                "status": "planned",
+                "contents": contents,
+                "messages": int(mailbox.get("messages") or 0),
+                "size": int(mailbox.get("size") or 0),
+            }
+        )
+    cli._LAST_REPORTS.append(
+        {
+            "title": "Simulation %s" % kind,
+            "report": {
+                "created_at": now_iso(),
+                "dry_run": True,
+                "type": kind,
+                "total": len(items),
+                "items": items,
+                "summary": {"ok": 0, "failed": 0, "skipped": 0, "planned": len(items)},
+            },
+        }
+    )
+
+
 def _account_elements(elements):
     from ..cli import ACCOUNT_ELEMENTS
 
@@ -162,6 +203,8 @@ def _run_account(config, args, elements):
     plan = cli._build_plan(
         config, users, options, args.from_label, args.to_label
     )
+    if args.dry_run:
+        _record_simulation("account", plan, contents or steps)
     if args.differential is not None:
         failures = 0
         if contents:
@@ -236,6 +279,7 @@ def _run_resource(config, args, elements):
     if not mailboxes:
         raise RuntimeError("Aucune ressource a migrer.")
     if args.dry_run:
+        _record_simulation("resource", {"mailboxes": mailboxes}, contents)
         cli._out(
             "Simulation ressources : %d ressource(s), contenus=%s."
             % (len(mailboxes), ", ".join(contents))

@@ -48,7 +48,7 @@
 - `--type all` exige un CSV `all` et traite account, puis resource, puis dl.
 - Les elements valides mais inapplicables a un type sont ignores avec un message stderr ; une selection entierement inapplicable est une erreur.
 - `--differential` est un `nargs="?"` avec `const=True` et type `datetime.date`.
-- La date est transmise au backend existant ; le filtrage mail est pris en charge par le mecanisme `--since` historique. Les elements calendar/contacts/tasks sont copies par le mecanisme existant et ne disposent pas encore d'un filtre de date distinct dans le backend.
+- La date est transmise au backend existant pour les mails et les elements structures (calendar/contacts/tasks) via les requetes de recherche et les exports ; les types sans date applicable (settings, tags, etc.) ne sont pas filtres.
 - `--differential` resynchronise les tags via `sync_tags`.
 - `--retry-failed` conserve le CSV obligatoire, filtre les echecs par type quand le rapport le fournit, et retombe sur `account` pour les anciens rapports.
 - `--json` est accepte uniquement avec `--dry-run`.

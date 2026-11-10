@@ -575,13 +575,15 @@ def _destination_structured_keys(client: Any, kinds: Set[str]) -> Set[str]:
 
 
 def _source_structured_entries(
-    client: Any, kind: str
+    client: Any, kind: str, since: str = ""
 ) -> List[Dict[str, Any]]:
     search = STRUCTURED_SEARCH.get(kind)
     if not search:
         return []
     entries: List[Dict[str, Any]] = []
-    for item in _search_pages(client, search[0], search[1]):
+    for item in _search_pages(
+        client, search[0], search[1], query=since or "is:anywhere"
+    ):
         item_id = item.get("id")
         if item_id in {None, ""}:
             return []
@@ -872,7 +874,7 @@ def export_mailbox(
 ) -> Dict[str, Any]:
     connection = config.connection("source")
     spec = CONTENT_SPECS.get(content) or CONTENT_SPECS["all"]
-    if query is None and content in {"mail", "all"} and config is not None:
+    if query is None and config is not None:
         query = since_query(config.sync().get("since") or "")
     query = query or spec.get("query") or "is:anywhere"
     types = spec.get("types") or ""
@@ -1661,7 +1663,7 @@ def _missing_entries(
 def _source_all_entries(client: Any, since: str = "") -> List[Dict[str, Any]]:
     entries = _source_mail_entries(client, since=since)
     for kind in STRUCTURED_SEARCH:
-        entries.extend(_source_structured_entries(client, kind))
+        entries.extend(_source_structured_entries(client, kind, since=since))
     return entries
 
 
@@ -1706,7 +1708,7 @@ def _full_content_record(
         source_email,
         archive,
         content=content,
-        query=(since or None) if content in {"mail", "all"} else None,
+        query=since or None,
         progress=lambda done, total_bytes, message: (
             progress(
                 index - 1,
@@ -1834,7 +1836,9 @@ def _incremental_content_record(
                     source_client, skipped=source_skipped, since=since
                 )
             else:
-                entries = _source_structured_entries(source_client, content)
+                entries = _source_structured_entries(
+                    source_client, content, since=since
+                )
         except Exception as exc:  # noqa: BLE001 - source index can be broken
             fallback = _full_content_record(
                 config,
@@ -1942,7 +1946,9 @@ def _incremental_content_record(
                     True,
                     since=since,
                 )
-            entries = _source_structured_entries(source_client, content)
+            entries = _source_structured_entries(
+                source_client, content, since=since
+            )
             destination_keys = _destination_structured_keys(
                 destination_client, {content}
             )
