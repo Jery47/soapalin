@@ -1,0 +1,6 @@
+# Python 3.8+ (recommended): current cryptography.
+cryptography>=41,<47; python_version >= "3.8"
+
+# Python 3.6/3.7 fallback (Zimbra hosts often ship an older system Python).
+cryptography==36.0.2; python_version < "3.8"
+cffi==1.15.1; python_version < "3.8"

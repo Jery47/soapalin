@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Runtime configuration and data
+config/config.json
+config/config.json.bak-*
+config/secret.key
+config/servers/
+data/
+temp/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local test data
+/temp.csv
+/jeanpaul.csv
+/all_user.csv
+/christophe.csv
+/thierry.csv
