@@ -123,6 +123,12 @@ soapalin --foreground server inventory dst1 --no-stats
 soapalin --foreground migrate users.csv cos --type account --from src1 --to dst1
 ```
 
+### Partages
+
+`share` migre les partages sortants et recr?e en mode accept? les partages
+entrants d?j? accept?s sur la source (`mid` pr?sent). Les partages entrants
+non accept?s sont ignor?s.
+
 ### Dossiers
 
 - `folder` cr?e uniquement l'arborescence de dossiers manquante, sans copier les messages.

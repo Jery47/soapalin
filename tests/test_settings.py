@@ -175,6 +175,97 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(destination.calls, [])
 
 
+class IncomingShareTests(unittest.TestCase):
+    class Destination:
+        def __init__(self, shares=None):
+            self.calls = []
+            self.shares = shares or []
+
+        def request(self, name, content=None):
+            self.calls.append((name, content or {}))
+            if name == "GetFolder":
+                return {"folder": {"id": "1"}}
+            return {}
+
+        def get_share_info(self):
+            return self.shares
+
+        def create_mountpoint(self, **kwargs):
+            self.calls.append(("create_mountpoint", kwargs))
+            return {"id": "mp-1"}
+
+    class Session:
+        def __init__(self):
+            self.owners = []
+
+        def request_single(self, name, content=None):
+            if name == "GetAccount":
+                return {"account": {"id": "owner-id"}}
+            return {}
+
+        def account_client(self, email):
+            self.owners.append(email)
+            owner = self
+
+            class OwnerClient:
+                def request(self, name, content=None):
+                    return {"folder": {"id": "folder-id"}}
+
+            return OwnerClient()
+
+    def test_accepted_incoming_share_creates_mountpoint(self):
+        destination = self.Destination()
+        session = self.Session()
+        result = settings_module.copy_incoming_shares(
+            {
+                "mountpoints": [
+                    {
+                        "mid": "12",
+                        "ownerEmail": "owner@example.com",
+                        "folderPath": "/Calendar",
+                        "view": "appointment",
+                        "rights": "r",
+                    }
+                ]
+            },
+            session,
+            destination,
+            "user@example.com",
+            dry_run=False,
+        )
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(result["errors"], [])
+        call = [item for item in destination.calls if item[0] == "create_mountpoint"]
+        self.assertEqual(len(call), 1)
+        payload = call[0][1]
+        self.assertEqual(payload["rid"], "folder-id")
+        self.assertEqual(payload["zid"], "owner-id")
+        self.assertEqual(payload["view"], "appointment")
+        self.assertEqual(payload["perm"], "r")
+
+    def test_unaccepted_incoming_share_is_skipped(self):
+        destination = self.Destination()
+        result = settings_module.copy_incoming_shares(
+            {
+                "mountpoints": [
+                    {
+                        "ownerEmail": "owner@example.com",
+                        "folderPath": "/Calendar",
+                    }
+                ]
+            },
+            self.Session(),
+            destination,
+            "user@example.com",
+            dry_run=False,
+        )
+        self.assertEqual(result["created"], 0)
+        self.assertEqual(result["skipped"], 1)
+        self.assertFalse(
+            any(item[0] == "create_mountpoint" for item in destination.calls)
+        )
+
+
 class SettingsParallelTests(unittest.TestCase):
     def test_account_settings_parallelism_reports_all_pairs(self):
         with tempfile.TemporaryDirectory() as tmp:

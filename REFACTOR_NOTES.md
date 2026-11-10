@@ -26,6 +26,7 @@
 
 ### Anciens flags non couverts directement
 
+- `share` recree les partages entrants deja acceptes sous forme de mountpoints sur la destination.
 - `folder` cree l'arborescence de dossiers vide ; `color` applique uniquement les couleurs des dossiers existants.
 - `provision account` inclut la COS dans `CreateAccount` et ajoute un `modify_account` dependant de la creation pour confirmer la COS.
 - `cos` est de nouveau un element de `migrate` pour affecter la COS aux comptes existants ; `provision cos` cree la COS sur la destination.

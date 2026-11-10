@@ -900,6 +900,109 @@ def copy_outgoing_shares(
     return result
 
 
+def copy_incoming_shares(
+    source_settings: Dict[str, Any],
+    destination_session,
+    destination_client,
+    destination_email: str,
+    dry_run: bool,
+    options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Mount shares already accepted on the source for the destination user."""
+    result = {"created": 0, "skipped": 0, "errors": []}
+    source_shares = source_settings.get("mountpoints") or []
+    if not source_shares:
+        return result
+    effective = options or {}
+    try:
+        from .apply import resolve_id
+
+        root_payload = destination_client.request(
+            "GetFolder", {"folder": {"path": "/"}}
+        )
+        root = unwrap(root_payload, "folder")
+        if isinstance(root, list):
+            root = root[0] if root else {}
+        root_id = str((root or {}).get("id") or "")
+        if not root_id:
+            raise SettingsError("dossier racine destination introuvable")
+        destination_shares = destination_client.get_share_info()
+    except Exception as exc:  # noqa: BLE001
+        result["errors"].append("partages entrants: %s" % describe_error(exc))
+        return result
+
+    existing = {
+        (
+            str(share.get("ownerEmail") or "").lower(),
+            str(share.get("folderPath") or ""),
+        )
+        for share in destination_shares
+        if share.get("mid")
+    }
+    owner_clients = {}
+
+    def owner_client(email):
+        if email not in owner_clients:
+            owner_clients[email] = destination_session.account_client(email)
+        return owner_clients[email]
+
+    for share in source_shares:
+        # ``mid`` is present for a share that is already mounted/accepted.
+        if not share.get("mid"):
+            result["skipped"] += 1
+            continue
+        owner_email = _map_email(effective, share.get("ownerEmail") or "")
+        folder_path = str(share.get("folderPath") or "/")
+        if not owner_email:
+            result["skipped"] += 1
+            continue
+        key = (owner_email.lower(), folder_path)
+        if key in existing:
+            result["skipped"] += 1
+            continue
+        if dry_run:
+            result["created"] += 1
+            existing.add(key)
+            continue
+        try:
+            owner_id = resolve_id(destination_session, "account", owner_email)
+            payload = owner_client(owner_email).request(
+                "GetFolder", {"folder": {"path": folder_path}}
+            )
+            folder = unwrap(payload, "folder")
+            if isinstance(folder, list):
+                folder = folder[0] if folder else {}
+            folder_id = str((folder or {}).get("id") or "1")
+            name = str(
+                share.get("name")
+                or share.get("ownerName")
+                or folder_path.rstrip("/").rsplit("/", 1)[-1]
+            )
+            if not name or name == "/":
+                name = owner_email
+            view = str(share.get("view") or "")
+            rights = str(share.get("rights") or share.get("perm") or "")
+            link = {
+                "name": name,
+                "l": root_id,
+                "rid": folder_id,
+                "zid": owner_id,
+            }
+            if view and view != "unknown":
+                link["view"] = view
+            if rights:
+                link["perm"] = rights
+            destination_client.create_mountpoint(**link)
+            existing.add(key)
+            result["created"] += 1
+        except Exception as exc:  # noqa: BLE001
+            result["errors"].append(
+                "partage entrant %s / %s : %s"
+                % (owner_email, folder_path, describe_error(exc))
+            )
+    return result
+
+
 def copy_permissions(
     source_settings: Dict[str, Any], destination, dry_run: bool
 ) -> Dict[str, Any]:
@@ -1182,6 +1285,17 @@ def copy_account_settings(
                         ),
                         "shares",
                     )
+                    merge(
+                        copy_incoming_shares(
+                            settings,
+                            destination_session,
+                            destination_client,
+                            destination_email,
+                            dry_run,
+                            options=sync,
+                        ),
+                        "shares_in",
+                    )
                 if "permissions" in wanted_parts:
                     merge(
                         copy_permissions(
@@ -1193,7 +1307,7 @@ def copy_account_settings(
                     )
 
                 mountpoints = len(settings.get("mountpoints") or [])
-                if mountpoints:
+                if mountpoints and "shares" not in wanted_parts:
                     record["warnings"].append(
                         "%d partage(s) entrant(s) non recrees : a remonter "
                         "manuellement sur la destination." % mountpoints
