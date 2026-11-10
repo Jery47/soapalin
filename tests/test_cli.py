@@ -111,6 +111,44 @@ class CliHelperTests(unittest.TestCase):
             self.assertIn("alice@example.com", content)
             self.assertIn("Secret!", content)
 
+    def test_retry_users_filters_report_type(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            report = config.storage_path("report_path") / "apply-20260101.json"
+            report.write_text(
+                json.dumps(
+                    {
+                        "items": [
+                            {
+                                "source": "a@example.com",
+                                "status": "failed",
+                                "type": "account",
+                            },
+                            {
+                                "source": "resource1@example.com",
+                                "status": "failed",
+                                "type": "resource",
+                            },
+                            {
+                                "source": "list@example.com",
+                                "status": "failed",
+                                "type": "dl",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    cli._retry_users(config, migrate_type="resource"),
+                    ["resource1@example.com"],
+                )
+                self.assertEqual(
+                    cli._retry_users(config, migrate_type="dl"),
+                    ["list@example.com"],
+                )
+
     def test_retry_users_reads_latest_failed_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)
@@ -183,6 +221,22 @@ class NewCliParserTests(unittest.TestCase):
         )
         self.assertEqual(args.type, "account")
         self.assertEqual(args.elements, ["mail", "calendar", "settings"])
+
+    def test_briefcase_account_element_is_supported(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "briefcase",
+                "--type",
+                "account",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.elements, ["briefcase"])
 
     def test_valid_migrate_resource(self):
         args = self.parsed(

@@ -97,8 +97,8 @@ soapalin migrate all --type all --from src1 --to dst1
 Éléments valides :
 
 ```text
-account  : mail calendar contacts tasks settings tags filter banlist
-           whitelist share sendas sendonbehalfof
+account  : mail calendar contacts tasks briefcase settings tags filter
+           banlist whitelist share sendas sendonbehalfof
 resource : mail calendar
 dl       : members
 ```

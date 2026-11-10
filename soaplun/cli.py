@@ -48,6 +48,7 @@ ACCOUNT_ELEMENTS = (
     "calendar",
     "contacts",
     "tasks",
+    "briefcase",
     "settings",
     "tags",
     "filter",
@@ -858,7 +859,8 @@ def _retry_users(
             _out("Reprise du rapport : %s" % path)
             return sorted(set(failed))
     raise RuntimeError(
-        "Aucun compte en echec trouve dans les rapports mailboxes-*.json."
+        "Aucun element en echec trouve dans les rapports mailboxes-*.json "
+        "ou apply-*.json."
     )
 
 

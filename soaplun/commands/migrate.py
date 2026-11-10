@@ -116,6 +116,19 @@ def _users(config, args, source):
     return users
 
 
+def _retry_filter(config, args):
+    from .. import cli
+
+    if getattr(args, "retry_failed", None) is None:
+        return None
+    return {
+        str(value).lower()
+        for value in cli._retry_users(
+            config, args.retry_failed or "", migrate_type=args.type
+        )
+    }
+
+
 def _record_simulation(kind, plan, elements):
     from .. import cli
     from ..inventory import now_iso
@@ -251,6 +264,9 @@ def _resource_mailboxes(config, args, elements):
         if str(args.csv).strip().lower() == "all"
         else cli.read_object_names(args.csv)
     )
+    retry = _retry_filter(config, args)
+    if retry is not None:
+        names = [name for name in names if str(name).lower() in retry]
     selected = {str(name).lower() for name in names}
     mailboxes = []
     for item in source.get("resources", []):
@@ -327,6 +343,9 @@ def _run_dl(config, args, elements):
         if str(args.csv).strip().lower() == "all"
         else cli.read_object_names(args.csv)
     )
+    retry = _retry_filter(config, args)
+    if retry is not None:
+        names = [name for name in names if str(name).lower() in retry]
     runtime = _runtime(args)
     options = cli._base_options(config, runtime)
     plan = diff_module.generate_plan(
