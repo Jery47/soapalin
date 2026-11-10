@@ -100,7 +100,7 @@ soapalin migrate all --type all --from src1 --to dst1
 Éléments valides :
 
 ```text
-account  : mail calendar contacts tasks briefcase settings tags filter
+account  : mail calendar contacts tasks briefcase cos settings tags filter
            banlist whitelist share sendas sendonbehalfof
 resource : mail calendar
 dl       : members
@@ -108,6 +108,15 @@ dl       : members
 
 `--type all` exige le CSV `all`. Les tags manquants sont resynchronisés en mode
 différentiel.
+
+L'?l?ment `cos` applique uniquement la COS source aux comptes d?j? existants.
+Il faut d'abord cr?er les COS, puis rafra?chir l'inventaire destination :
+
+```bash
+soapalin --foreground provision cos all --from src1 --to dst1
+soapalin --foreground server inventory dst1 --no-stats
+soapalin --foreground migrate users.csv cos --type account --from src1 --to dst1
+```
 
 ### Différentiel
 

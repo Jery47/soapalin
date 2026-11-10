@@ -49,6 +49,7 @@ ACCOUNT_ELEMENTS = (
     "contacts",
     "tasks",
     "briefcase",
+    "cos",
     "settings",
     "tags",
     "filter",
@@ -160,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  soapalin provision account users.csv --from src1 --to dst1 --password Secret!\n"
             "  soapalin provision account users.csv --from src1 --to dst1 --random-password --keep-admin\n"
             "  soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1\n"
+            "  soapalin migrate users.csv cos --type account --from src1 --to dst1\n"
             "  soapalin migrate all --type account --from src1 --to dst1\n"
             "  soapalin migrate resources.csv mail calendar --type resource --from src1 --to dst1\n"
             "  soapalin migrate lists.csv members --type dl --from src1 --to dst1\n"

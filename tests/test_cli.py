@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from soaplun import cli
@@ -311,6 +312,77 @@ class NewCliParserTests(unittest.TestCase):
             ]
         )
         self.assertEqual(args.elements, ["briefcase"])
+
+    def test_valid_migrate_cos(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "cos",
+                "--type",
+                "account",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.elements, ["cos"])
+
+    def test_cos_plan_only_modifies_cos(self):
+        args = SimpleNamespace(
+            from_label="src1",
+            to_label="dst1",
+            dry_run=True,
+            keep_tgz=False,
+            keep_tgz_days=0,
+            parallelism=1,
+            mapping_domain="",
+            mapping_host="",
+            differential=None,
+        )
+        plan = {
+            "actions": [
+                {
+                    "id": "modify_account:u@example.com",
+                    "kind": "modify_account",
+                    "target": "u@example.com",
+                    "payload": {
+                        "name": "u@example.com",
+                        "cos_name": "COS1",
+                        "attrs": {"zimbraPrefLocale": "fr"},
+                    },
+                },
+                {
+                    "id": "create_account:v@example.com",
+                    "kind": "create_account",
+                    "target": "v@example.com",
+                    "payload": {"name": "v@example.com"},
+                },
+            ],
+            "options": {},
+        }
+        with mock.patch.object(
+            cli,
+            "_load_snapshots",
+            return_value=({}, {"cos": [{"name": "COS1"}]}),
+        ), mock.patch.object(
+            cli, "_base_options", return_value={}
+        ), mock.patch.object(
+            cli, "_build_plan", return_value=plan
+        ), mock.patch(
+            "soaplun.apply.apply_plan", return_value={"summary": {}}
+        ) as apply, mock.patch.object(
+            cli, "_print_summary", return_value=0
+        ):
+            self.assertEqual(
+                migrate_cmd._run_cos(mock.Mock(), args, ["u@example.com"]),
+                0,
+            )
+        passed = apply.call_args.args[1]
+        self.assertEqual(len(passed["actions"]), 1)
+        self.assertEqual(passed["actions"][0]["payload"]["attrs"], {})
+        self.assertEqual(passed["actions"][0]["payload"]["cos_name"], "COS1")
 
     def test_valid_migrate_resource(self):
         args = self.parsed(

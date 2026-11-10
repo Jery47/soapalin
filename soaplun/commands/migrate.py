@@ -175,6 +175,67 @@ def _record_simulation(kind, plan, elements):
     )
 
 
+def _run_cos(config, args, users):
+    from .. import cli
+    from ..apply import apply_plan
+
+    source, destination = cli._load_snapshots(
+        config, args.from_label, args.to_label
+    )
+    runtime = _runtime(args)
+    options = cli._base_options(config, runtime)
+    plan = cli._build_plan(
+        config, users, options, args.from_label, args.to_label
+    )
+    destination_cos = {
+        str(item.get("name") or "").lower()
+        for item in destination.get("cos", [])
+        if item.get("name")
+    }
+    actions = []
+    missing = set()
+    for item in plan.get("actions", []):
+        if item.get("kind") != "modify_account":
+            continue
+        payload = dict(item.get("payload") or {})
+        cos_name = str(payload.get("cos_name") or "")
+        if not cos_name:
+            continue
+        if cos_name.lower() not in destination_cos:
+            missing.add(cos_name)
+            continue
+        payload["attrs"] = {}
+        payload["changes"] = ["COS -> %s" % cos_name]
+        actions.append(
+            dict(
+                item,
+                payload=payload,
+                description="Appliquer la COS %s a %s"
+                % (cos_name, item.get("target", "")),
+            )
+        )
+    if missing:
+        raise RuntimeError(
+            "COS absente(s) sur la destination : %s. Lancez d'abord "
+            "'soapalin provision cos all'." % ", ".join(sorted(missing))
+        )
+    if not actions:
+        raise RuntimeError(
+            "Aucun compte existant avec une COS a appliquer."
+        )
+    plan = dict(plan, actions=actions)
+    report = apply_plan(
+        config,
+        plan,
+        progress=cli._progress,
+        dry_run=args.dry_run,
+        options=options,
+        accounts=users,
+        cancel=cli._JOB_STOP_EVENT,
+    )
+    return cli._print_summary("COS", report)
+
+
 def _account_elements(elements):
     from ..cli import ACCOUNT_ELEMENTS
 
@@ -222,9 +283,11 @@ def _run_account(config, args, elements):
         config, users, options, args.from_label, args.to_label
     )
     if args.dry_run:
-        _record_simulation("account", plan, contents or steps)
+        _record_simulation("account", plan, contents or steps or ["cos"])
+    failures = 0
+    if "cos" in account_elements:
+        failures += _run_cos(config, args, users)
     if args.differential is not None:
-        failures = 0
         if contents:
             failures += cli._run_diff(
                 config,
@@ -247,7 +310,7 @@ def _run_account(config, args, elements):
                 cancel=cli._JOB_STOP_EVENT,
             )
         return 2 if failures else 0
-    return cli._run_import(
+    result = cli._run_import(
         config,
         plan,
         options,
@@ -257,6 +320,7 @@ def _run_account(config, args, elements):
         runtime,
         cancel=cli._JOB_STOP_EVENT,
     )
+    return 2 if failures or result else 0
 
 
 def _resource_mailboxes(config, args, elements):

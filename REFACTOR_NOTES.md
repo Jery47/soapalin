@@ -22,11 +22,11 @@
 | `--force-sync-tags` | supprime ; `--differential` resynchronise les tags | `sync_tags` |
 | `--mapping-cos` | supprime ; les COS gardent le meme nom | aucun mapping COS |
 | `--label` | supprime ; `--from` / `--to` et labels positionnels | config serveurs |
-| `--import-user cos` | retire de `migrate` ; utiliser `provision cos` | `_run_objects` |
+| `--import-user cos` | `migrate CSV cos --type account` ; `provision cos` cree les COS | `_run_cos`, `_run_objects` |
 
 ### Anciens flags non couverts directement
 
-- `--import-user cos` : deplace vers `provision cos`.
+- `cos` est de nouveau un element de `migrate` pour affecter la COS aux comptes existants ; `provision cos` cree la COS sur la destination.
 - `--import-cos`, `--import-dl`, `--import-distribution-lists`, `--create-resource`, `--import-resource`, `--label` : alias supprimes.
 - `--sync-tags`, `--force-sync-tags`, `--since`, `--incremental`, `--diff-user`, sous-commande `diff` : supprimes.
 - `--jobs` / `--jobs-action` : remplaces par la sous-commande `job`.
@@ -91,11 +91,13 @@ Exemples:
   soapalin server list
   soapalin server test src1
   soapalin server inventory src1
+  soapalin server inventory src1 --no-stats
   soapalin provision domain domains.csv --from src1 --to dst1
   soapalin provision cos all --from src1 --to dst1
   soapalin provision account users.csv --from src1 --to dst1 --password Secret!
   soapalin provision account users.csv --from src1 --to dst1 --random-password --keep-admin
   soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1
+  soapalin migrate users.csv cos --type account --from src1 --to dst1
   soapalin migrate all --type account --from src1 --to dst1
   soapalin migrate resources.csv mail calendar --type resource --from src1 --to dst1
   soapalin migrate lists.csv members --type dl --from src1 --to dst1

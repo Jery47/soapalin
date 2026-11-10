@@ -26,7 +26,7 @@ directement.
 | `--list-user CSV` | CSV positionnel de `provision` / `migrate` |
 | `--import-user ELEMENTS` | `migrate CSV ELEMENTS --type account --from SRC --to DST` |
 | `--import-user all` | `migrate CSV all --type account --from SRC --to DST` |
-| `--import-user cos` | `provision cos` (COS retirée des éléments de `migrate`) |
+| `--import-user cos` | `migrate CSV cos --type account ...` (apr??s `provision cos`) |
 | `--import-user briefcase` | `migrate CSV briefcase --type account ...` |
 | `--diff-user` | `migrate CSV ELEMENTS --type account ... --differential` |
 | `--since DATE` | `--differential=DATE` |
