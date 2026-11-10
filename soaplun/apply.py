@@ -521,6 +521,8 @@ def _apply_actions_parallel(
     stamp,
     options,
     workers,
+    overall_total=None,
+    offset=0,
 ):
     results = [None] * total
     profile = config.current_profile()
@@ -607,14 +609,14 @@ def _apply_actions_parallel(
             completed += 1
             if progress:
                 progress(
-                    completed,
-                    total,
+                    offset + completed,
+                    overall_total or total,
                     "%s : %s"
                     % (record.get("kind", ""), record.get("target", "")),
                 )
 
     if progress:
-        progress(0, total, "En cours")
+        progress(offset, overall_total or total, "En cours")
     with ThreadPoolExecutor(max_workers=min(workers, max(1, total))) as executor:
         futures = {
             executor.submit(task, index, item): index
@@ -706,25 +708,42 @@ def _apply_plan_inner(
     session = ZimbraSession(config, "destination", readonly=False)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     workers = max(1, int(parallelism or 1))
-    parallel = (
-        workers > 1
-        and total > 1
-        and not dry_run
-        and not stop_on_error
-        and len({item.get("kind") for item in actions}) == 1
-        and not any(item.get("depends_on") for item in actions)
-    )
-    if parallel:
-        items, counters, generated_passwords = _apply_actions_parallel(
-            config,
-            actions,
-            total,
-            progress,
-            cancel,
-            stamp,
-            _current_options(),
-            workers,
-        )
+    if workers > 1 and total > 1 and not dry_run and not stop_on_error:
+        groups = {}
+        for item in actions:
+            groups.setdefault(action_sort_key(item)[0], []).append(item)
+        items = []
+        counters = {"ok": 0, "failed": 0, "skipped": 0, "planned": 0}
+        generated_passwords = {}
+        offset = 0
+        for order in sorted(groups):
+            group = groups[order]
+            ids = {str(item.get("id") or "") for item in group}
+            dependent = any(
+                str(dep) in ids
+                for item in group
+                for dep in (item.get("depends_on") or [])
+            )
+            group_workers = 1 if dependent else workers
+            group_items, group_counters, group_passwords = (
+                _apply_actions_parallel(
+                    config,
+                    group,
+                    len(group),
+                    progress,
+                    cancel,
+                    stamp,
+                    _current_options(),
+                    group_workers,
+                    overall_total=total,
+                    offset=offset,
+                )
+            )
+            items.extend(group_items)
+            for key, value in group_counters.items():
+                counters[key] = counters.get(key, 0) + value
+            generated_passwords.update(group_passwords)
+            offset += len(group)
         return _finish_report(
             config, plan, dry_run, stamp, total, counters, items,
             generated_passwords,

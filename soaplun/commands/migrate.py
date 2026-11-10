@@ -433,6 +433,7 @@ def _run_dl(config, args, elements):
         dry_run=args.dry_run,
         kinds={"add_dl_member"},
         options=options,
+        parallelism=args.parallelism,
         cancel=cli._JOB_STOP_EVENT,
     )
     return cli._print_summary("Listes", report)
