@@ -44,7 +44,12 @@ def add_parser(subparsers):
         default=None,
         metavar="RAPPORT",
     )
-    parser.add_argument("--parallelism", type=int, default=4)
+    parser.add_argument(
+        "--parallelism",
+        type=int,
+        default=1,
+        help="nombre de taches en parallele (defaut : 1)",
+    )
     parser.add_argument("--keep-tgz", nargs="?", const=True, default=False,
                         type=_bool)
     parser.add_argument("--keep-tgz-days", type=int, default=0)

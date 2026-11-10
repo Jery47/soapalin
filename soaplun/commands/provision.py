@@ -26,10 +26,11 @@ def add_parser(subparsers):
         item = sub.add_parser(name, help=help_text)
         item.add_argument("target", metavar="CSV|all")
         _connection_options(item)
+        _parallelism_option(item)
     account = sub.add_parser("account", help="creer les comptes")
     account.add_argument("csv", metavar="CSV|all")
     _connection_options(account)
-    account.add_argument("--parallelism", type=int, default=4)
+    _parallelism_option(account)
     account.add_argument("--keep-admin", action="store_true")
     password = account.add_mutually_exclusive_group()
     password.add_argument("--password", default="")
@@ -42,6 +43,15 @@ def _connection_options(parser):
     from ..cli import _add_connection_options
 
     _add_connection_options(parser)
+
+
+def _parallelism_option(parser):
+    parser.add_argument(
+        "--parallelism",
+        type=int,
+        default=1,
+        help="nombre de taches en parallele (defaut : 1)",
+    )
 
 
 def _runtime(args, **extra):

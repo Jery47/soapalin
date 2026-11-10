@@ -219,6 +219,64 @@ class NewCliParserTests(unittest.TestCase):
         self.assertEqual(args.password, "Secret!")
         self.assertFalse(args.random_password)
 
+    def test_parallelism_defaults_to_one(self):
+        migrate = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "mail",
+                "--type",
+                "account",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(migrate.parallelism, 1)
+        provision = self.parsed(
+            [
+                "provision",
+                "cos",
+                "all",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(provision.parallelism, 1)
+        account = self.parsed(
+            [
+                "provision",
+                "account",
+                "users.csv",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+                "--password",
+                "Secret!",
+            ]
+        )
+        self.assertEqual(account.parallelism, 1)
+
+    def test_parallelism_can_be_overridden(self):
+        args = self.parsed(
+            [
+                "provision",
+                "domain",
+                "domains.csv",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+                "--parallelism",
+                "6",
+            ]
+        )
+        self.assertEqual(args.parallelism, 6)
+
     def test_valid_migrate_account(self):
         args = self.parsed(
             [
