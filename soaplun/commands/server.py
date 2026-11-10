@@ -15,7 +15,7 @@ def add_parser(subparsers):
             "  soapalin server list\n"
             "  soapalin server test src1\n"
             "  soapalin server inventory src1\n"
-            "  soapalin server inventory src1 --no-stats\n"
+            "  soapalin server inventory src1 --no-stats --parallelism 4\n"
         ),
     )
     sub = parser.add_subparsers(dest="server_command", metavar="ACTION")
@@ -33,6 +33,12 @@ def add_parser(subparsers):
                 "--no-stats",
                 action="store_true",
                 help="ne pas interroger GetMailbox pour chaque compte",
+            )
+            item.add_argument(
+                "--parallelism",
+                type=int,
+                default=1,
+                help="nombre de collectes de comptes en parallele (defaut : 1)",
             )
     rename = sub.add_parser("rename", help="renommer un serveur")
     rename.add_argument("label")
@@ -109,6 +115,7 @@ def run(args):
             config,
             args.label,
             with_stats=not args.no_stats,
+            parallelism=args.parallelism,
             cancel=cli._JOB_STOP_EVENT or threading.Event(),
         )
     raise RuntimeError("Action serveur inconnue : %s" % command)

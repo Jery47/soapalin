@@ -193,9 +193,12 @@ class NewCliParserTests(unittest.TestCase):
             self.assertIn(value, help_text)
 
     def test_server_inventory_no_stats(self):
-        args = self.parsed(["server", "inventory", "src1", "--no-stats"])
+        args = self.parsed(
+            ["server", "inventory", "src1", "--no-stats", "--parallelism", "4"]
+        )
         self.assertEqual(args.server_command, "inventory")
         self.assertTrue(args.no_stats)
+        self.assertEqual(args.parallelism, 4)
 
     def test_server_add(self):
         args = self.parsed(["server", "add", "src1", "--role", "source"])
@@ -636,10 +639,11 @@ class CliServerCommandTests(unittest.TestCase):
         ) as collect:
             with contextlib.redirect_stdout(output):
                 result = cli._run_server_inventory(
-                    config, "src1", with_stats=False
+                    config, "src1", with_stats=False, parallelism=3
                 )
         self.assertEqual(result, 0)
         self.assertFalse(collect.call_args.kwargs["with_stats"])
+        self.assertEqual(collect.call_args.kwargs["parallelism"], 3)
 
     def test_server_add_rename_remove(self):
         with tempfile.TemporaryDirectory() as tmp:

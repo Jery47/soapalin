@@ -58,11 +58,14 @@ soapalin server show src1
 soapalin server test src1
 soapalin server inventory src1
 soapalin server inventory src1 --no-stats
+soapalin server inventory src1 --no-stats --parallelism 4
 soapalin server rename src1 zimbra-prod
 soapalin server remove src1
 ```
 
 `server inventory --no-stats` ?vite un `GetMailbox` par compte : l'inventaire est plus rapide, mais les tailles et volumes des bo?tes ne sont pas collect?s.
+
+`--parallelism N` collecte les comptes avec plusieurs sessions ind?pendantes (d?faut : 1).
 
 Les serveurs sont stockés dans `config/servers/<label>.json`. Editer ensuite
 ces fichiers pour renseigner les hôtes, ports, comptes admin et mots de passe.

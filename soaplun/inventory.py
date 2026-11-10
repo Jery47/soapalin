@@ -6,6 +6,7 @@ import os
 import re
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
@@ -343,6 +344,8 @@ def collect_accounts(
     domains: Optional[List[Dict[str, Any]]] = None,
     warnings: Optional[List[str]] = None,
     cancel=None,
+    parallelism: int = 1,
+    session_factory=None,
 ) -> List[Dict[str, Any]]:
     sync = sync or {}
     include_admin = bool(sync.get("include_admin_accounts", False))
@@ -363,31 +366,64 @@ def collect_accounts(
             continue
         candidates.append(name)
 
-    accounts: List[Dict[str, Any]] = []
+    accounts: List[Optional[Dict[str, Any]]] = [None] * len(candidates)
     total = len(candidates)
-    for index, name in enumerate(candidates, start=1):
+    local = threading.local()
+    progress_lock = threading.Lock()
+    completed = 0
+
+    def worker_session():
+        if session_factory is None:
+            return session
+        if not hasattr(local, "session"):
+            local.session = session_factory()
+        return local.session
+
+    def task(index: int, name: str) -> Optional[Dict[str, Any]]:
         if cancel is not None and cancel.is_set():
-            break
-        if progress:
-            progress("accounts", index, total, name)
+            return None
         try:
-            accounts.append(_fetch_account(session, name, with_stats=with_stats))
-        except Exception as exc:  # noqa: BLE001 - keep going, report later
-            accounts.append(
-                {
-                    "name": name,
-                    "domain": account_domain(name),
-                    "attrs": {},
-                    "aliases": [],
-                    "effective": {},
-                    "cos_id": "",
-                    "mail_host": "",
-                    "is_admin": False,
-                    "is_system": False,
-                    "error": describe_error(exc),
-                }
+            return _fetch_account(
+                worker_session(), name, with_stats=with_stats
             )
-    return accounts
+        except Exception as exc:  # noqa: BLE001 - keep going, report later
+            return {
+                "name": name,
+                "domain": account_domain(name),
+                "attrs": {},
+                "aliases": [],
+                "effective": {},
+                "cos_id": "",
+                "mail_host": "",
+                "is_admin": False,
+                "is_system": False,
+                "error": describe_error(exc),
+            }
+
+    def completed_task(index: int, item) -> None:
+        nonlocal completed
+        accounts[index - 1] = item
+        with progress_lock:
+            completed += 1
+            if progress:
+                progress("accounts", completed, total, candidates[index - 1])
+
+    workers = max(1, int(parallelism or 1))
+    if workers <= 1 or total <= 1:
+        for index, name in enumerate(candidates, start=1):
+            if cancel is not None and cancel.is_set():
+                break
+            completed_task(index, task(index, name))
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, total)) as executor:
+            futures = {
+                executor.submit(task, index, name): index
+                for index, name in enumerate(candidates, start=1)
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                completed_task(index, future.result())
+    return [item for item in accounts if item is not None]
 
 
 def collect_distribution_lists(session: ZimbraSession) -> List[Dict[str, Any]]:
@@ -1007,10 +1043,15 @@ def collect_snapshot(
     with_stats: bool = True,
     profile: Optional[str] = None,
     cancel=None,
+    parallelism: int = 1,
 ) -> Dict[str, Any]:
     """Collect a full, read-only snapshot for ``side`` and persist it."""
     profile = profile or config.current_profile()
     session = ZimbraSession(config, side, readonly=(side == "source"))
+
+    def session_factory():
+        with config.profile_context(profile):
+            return ZimbraSession(config, side, readonly=(side == "source"))
     snapshot: Dict[str, Any] = {
         "version": 1,
         "created_at": now_iso(),
@@ -1041,6 +1082,8 @@ def collect_snapshot(
                 domains=snapshot["domains"],
                 warnings=snapshot["warnings"],
                 cancel=cancel,
+                parallelism=parallelism,
+                session_factory=session_factory,
             ),
         ),
         ("distribution lists", lambda: collect_distribution_lists(session)),

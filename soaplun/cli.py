@@ -156,6 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  soapalin server test src1\n"
             "  soapalin server inventory src1\n"
             "  soapalin server inventory src1 --no-stats\n"
+            "  soapalin server inventory src1 --no-stats --parallelism 4\n"
             "  soapalin provision domain domains.csv --from src1 --to dst1\n"
             "  soapalin provision cos all --from src1 --to dst1\n"
             "  soapalin provision account users.csv --from src1 --to dst1 --password Secret!\n"
@@ -1003,7 +1004,11 @@ def _run_server_test(config, label: str) -> int:
 
 
 def _run_server_inventory(
-    config, label: str, with_stats: bool = True, cancel=None
+    config,
+    label: str,
+    with_stats: bool = True,
+    parallelism: int = 1,
+    cancel=None,
 ) -> int:
     server = config.server(label)
     config.use_server(label)
@@ -1014,6 +1019,7 @@ def _run_server_inventory(
         with_stats=with_stats,
         profile=label,
         cancel=cancel,
+        parallelism=parallelism,
     )
     _out(
         "%s (%s) : %s comptes, %s domaines, snapshot=%s"

@@ -2,7 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from soaplun import inventory as inventory_module
 from soaplun.config import Config
 from soaplun.inventory import (
     _domain_entries,
@@ -12,6 +14,7 @@ from soaplun.inventory import (
     attrs_to_dict,
     bool_attr,
     cleanup_snapshots,
+    collect_accounts,
     collect_cos,
     entry_name,
     latest_snapshot,
@@ -157,6 +160,36 @@ class DomainListingTests(unittest.TestCase):
         items = collect_cos(FakeClient())
         self.assertEqual(calls, ["GetAllCos", "GetCos"])
         self.assertEqual(items, [{"name": "default", "id": "1", "attrs": {}}])
+
+
+class AccountCollectionTests(unittest.TestCase):
+    def test_parallel_collection_uses_worker_sessions(self):
+        entries = [{"name": "u%d@example.com" % index} for index in range(8)]
+        sessions = []
+
+        def factory():
+            session = object()
+            sessions.append(session)
+            return session
+
+        def fetch(session, name, with_stats=False):
+            return {"name": name}
+
+        with mock.patch.object(
+            inventory_module, "_domain_entries", return_value=entries
+        ), mock.patch.object(
+            inventory_module, "_fetch_account", side_effect=fetch
+        ):
+            accounts = collect_accounts(
+                object(), parallelism=4, session_factory=factory
+            )
+
+        self.assertEqual(
+            [item["name"] for item in accounts],
+            [item["name"] for item in entries],
+        )
+        self.assertGreaterEqual(len(sessions), 1)
+        self.assertLessEqual(len(sessions), 4)
 
 
 class SnapshotProfileTests(unittest.TestCase):

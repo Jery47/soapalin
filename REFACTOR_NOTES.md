@@ -51,6 +51,7 @@
 - La date est transmise au backend existant pour les mails et les elements structures (calendar/contacts/tasks) via les requetes de recherche et les exports ; les types sans date applicable (settings, tags, etc.) ne sont pas filtres.
 - `--differential` resynchronise les tags via `sync_tags`.
 - `--retry-failed` conserve le CSV obligatoire, filtre les echecs par type quand le rapport le fournit, et retombe sur `account` pour les anciens rapports.
+- `server inventory` accepte `--no-stats` pour ignorer `GetMailbox` et `--parallelism` pour parall?liser la collecte des comptes (d?faut : 1).
 - `--parallelism` est disponible sur toutes les commandes `provision` et `migrate`, avec une valeur par defaut de 1.
 - `--json` est accepte uniquement avec `--dry-run` et restitue les rapports de simulation collectes.
 - Un code de retour `2` signale une reussite partielle (echec ou traitement partiel d'un compte) ; `1` reste une erreur globale.
@@ -92,6 +93,7 @@ Exemples:
   soapalin server test src1
   soapalin server inventory src1
   soapalin server inventory src1 --no-stats
+  soapalin server inventory src1 --no-stats --parallelism 4
   soapalin provision domain domains.csv --from src1 --to dst1
   soapalin provision cos all --from src1 --to dst1
   soapalin provision account users.csv --from src1 --to dst1 --password Secret!
@@ -136,7 +138,7 @@ Exemples:
   soapalin server list
   soapalin server test src1
   soapalin server inventory src1
-  soapalin server inventory src1 --no-stats
+  soapalin server inventory src1 --no-stats --parallelism 4
 ```
 
 ### `soapalin provision --help`
