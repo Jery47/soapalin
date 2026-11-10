@@ -154,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  soapalin server list\n"
             "  soapalin server test src1\n"
             "  soapalin server inventory src1\n"
+            "  soapalin server inventory src1 --no-stats\n"
             "  soapalin provision domain domains.csv --from src1 --to dst1\n"
             "  soapalin provision cos all --from src1 --to dst1\n"
             "  soapalin provision account users.csv --from src1 --to dst1 --password Secret!\n"
@@ -999,11 +1000,18 @@ def _run_server_test(config, label: str) -> int:
     return 0 if result.get("ok") else 1
 
 
-def _run_server_inventory(config, label: str, cancel=None) -> int:
+def _run_server_inventory(
+    config, label: str, with_stats: bool = True, cancel=None
+) -> int:
     server = config.server(label)
     config.use_server(label)
     report = inventory_module.collect_snapshot(
-        config, server["type"], progress=_progress, profile=label, cancel=cancel
+        config,
+        server["type"],
+        progress=_progress,
+        with_stats=with_stats,
+        profile=label,
+        cancel=cancel,
     )
     _out(
         "%s (%s) : %s comptes, %s domaines, snapshot=%s"

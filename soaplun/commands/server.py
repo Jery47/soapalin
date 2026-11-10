@@ -15,6 +15,7 @@ def add_parser(subparsers):
             "  soapalin server list\n"
             "  soapalin server test src1\n"
             "  soapalin server inventory src1\n"
+            "  soapalin server inventory src1 --no-stats\n"
         ),
     )
     sub = parser.add_subparsers(dest="server_command", metavar="ACTION")
@@ -27,6 +28,12 @@ def add_parser(subparsers):
     ):
         item = sub.add_parser(name, help=help_text)
         item.add_argument("label")
+        if name == "inventory":
+            item.add_argument(
+                "--no-stats",
+                action="store_true",
+                help="ne pas interroger GetMailbox pour chaque compte",
+            )
     rename = sub.add_parser("rename", help="renommer un serveur")
     rename.add_argument("label")
     rename.add_argument("new_label")
@@ -99,6 +106,9 @@ def run(args):
         import threading
 
         return cli._run_server_inventory(
-            config, args.label, cancel=cli._JOB_STOP_EVENT or threading.Event()
+            config,
+            args.label,
+            with_stats=not args.no_stats,
+            cancel=cli._JOB_STOP_EVENT or threading.Event(),
         )
     raise RuntimeError("Action serveur inconnue : %s" % command)

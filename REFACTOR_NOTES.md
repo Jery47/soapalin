@@ -133,6 +133,7 @@ Exemples:
   soapalin server list
   soapalin server test src1
   soapalin server inventory src1
+  soapalin server inventory src1 --no-stats
 ```
 
 ### `soapalin provision --help`

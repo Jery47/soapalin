@@ -191,6 +191,11 @@ class NewCliParserTests(unittest.TestCase):
         ):
             self.assertIn(value, help_text)
 
+    def test_server_inventory_no_stats(self):
+        args = self.parsed(["server", "inventory", "src1", "--no-stats"])
+        self.assertEqual(args.server_command, "inventory")
+        self.assertTrue(args.no_stats)
+
     def test_server_add(self):
         args = self.parsed(["server", "add", "src1", "--role", "source"])
         self.assertEqual(args.command, "server")
@@ -490,6 +495,22 @@ class NewCliParserTests(unittest.TestCase):
 
 
 class CliServerCommandTests(unittest.TestCase):
+    def test_server_inventory_passes_no_stats(self):
+        config = mock.Mock()
+        config.server.return_value = {"type": "source"}
+        output = io.StringIO()
+        with mock.patch.object(
+            cli.inventory_module,
+            "collect_snapshot",
+            return_value={"counts": {"accounts": 1, "domains": 1}, "path": "x"},
+        ) as collect:
+            with contextlib.redirect_stdout(output):
+                result = cli._run_server_inventory(
+                    config, "src1", with_stats=False
+                )
+        self.assertEqual(result, 0)
+        self.assertFalse(collect.call_args.kwargs["with_stats"])
+
     def test_server_add_rename_remove(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)
