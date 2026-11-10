@@ -9,6 +9,7 @@ import datetime
 import fnmatch
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import config as config_module
@@ -963,6 +964,7 @@ def copy_account_settings(
     dry_run: bool = False,
     options: Optional[Dict[str, Any]] = None,
     parts: Optional[List[str]] = None,
+    parallelism: int = 1,
 ) -> Dict[str, Any]:
     sync = _options_with_defaults(config, plan, options)
     wanted_parts = set(normalize_parts(parts, sync))
@@ -1001,181 +1003,268 @@ def copy_account_settings(
             or pair.get("destination", "").lower() in wanted
         ]
 
-    source = ZimbraSession(config, "source", readonly=True)
-    destination = ZimbraSession(config, "destination", readonly=False)
     total = len(pairs)
-    items: List[Dict[str, Any]] = []
-    counters = {"ok": 0, "partial": 0, "failed": 0, "skipped": 0}
+    profile = config.current_profile()
+    local = threading.local()
 
-    for index, pair in enumerate(pairs, start=1):
-        if cancel is not None and cancel.is_set():
-            items.append(
-                {
-                    "source": pair.get("source"),
-                    "destination": pair.get("destination"),
-                    "status": "skipped",
-                    "error": "Annulé par l'utilisateur",
-                }
+    def sessions():
+        if not hasattr(local, "source"):
+            local.source = ZimbraSession(config, "source", readonly=True)
+            local.destination = ZimbraSession(
+                config, "destination", readonly=False
             )
-            counters["skipped"] += 1
-            continue
+        return local.source, local.destination
 
+    def process_pair(pair):
         source_email = pair.get("source", "")
         destination_email = pair.get("destination", "")
-        if progress:
-            progress(
-                index - 1,
-                total,
-                "Réglages %d/%d : %s" % (index, total, source_email),
-            )
-        record: Dict[str, Any] = {
+        record = {
             "source": source_email,
             "destination": destination_email,
             "counts": {},
             "errors": [],
             "warnings": [],
         }
+        if cancel is not None and cancel.is_set():
+            record.update(
+                {
+                    "status": "skipped",
+                    "error": "Annule par l'utilisateur",
+                }
+            )
+            return record
+        with config.profile_context(profile):
+            try:
+                source_session, destination_session = sessions()
+                settings = inventory_module.collect_account_settings(
+                    source_session, source_email
+                )
+                if settings.get("error"):
+                    raise SettingsError(settings["error"])
+                destination_client = destination_session.account_client(
+                    destination_email
+                )
+                destination_mail = None
+                if wanted_parts.intersection(
+                    {
+                        "filters",
+                        "permissions",
+                        "folder",
+                        "folders",
+                        "color",
+                        "shares",
+                        "tags",
+                    }
+                ):
+                    destination_mail = destination_session.mail_client(
+                        destination_email
+                    )
 
-        try:
-            settings = inventory_module.collect_account_settings(source, source_email)
-            if settings.get("error"):
-                raise SettingsError(settings["error"])
-            destination_client = destination.account_client(destination_email)
-            destination_mail = None
-            if wanted_parts.intersection(
-                {"filters", "permissions", "folder", "folders", "color", "shares", "tags"}
-            ):
-                destination_mail = destination.mail_client(destination_email)
+                counts = {}
+                errors = []
+                ignored_shares = []
+                signature_ids = {}
 
-            counts: Dict[str, int] = {}
-            errors: List[str] = []
-            ignored_shares: List[Dict[str, Any]] = []
-            signature_ids: Dict[str, str] = {}
+                def merge(result, prefix):
+                    for key, value in result.items():
+                        if key == "errors":
+                            errors.extend(value)
+                        elif key == "ignored_shares":
+                            ignored_shares.extend(value)
+                        elif key == "id_map":
+                            signature_ids.update(value)
+                        elif isinstance(value, int):
+                            counts["%s_%s" % (prefix, key)] = (
+                                counts.get("%s_%s" % (prefix, key), 0)
+                                + value
+                            )
 
-            def merge(result: Dict[str, Any], prefix: str) -> None:
-                for key, value in result.items():
-                    if key == "errors":
-                        errors.extend(value)
-                    elif key == "ignored_shares":
-                        ignored_shares.extend(value)
-                    elif key == "id_map":
-                        signature_ids.update(value)
-                    elif isinstance(value, int):
-                        counts["%s_%s" % (prefix, key)] = (
-                            counts.get("%s_%s" % (prefix, key), 0) + value
-                        )
-
-            if "settings" in wanted_parts:
-                merge(copy_signatures(settings, destination_client, dry_run), "signatures")
-                merge(copy_identities(settings, destination_client, dry_run), "identities")
-            if "prefs" in wanted_parts:
-                merge(
-                    copy_preferences(
-                        config,
-                        settings,
-                        destination_client,
-                        dry_run,
-                        options=sync,
-                        signature_id_map=signature_ids,
-                    ),
-                    "prefs",
-                )
-            if "folder" in wanted_parts:
-                merge(
-                    copy_empty_folders(
-                        settings, destination_mail or destination_client, dry_run
-                    ),
-                    "folder",
-                )
-            if "folders" in wanted_parts or "color" in wanted_parts:
-                merge(
-                    copy_folder_colors(
-                        settings, destination_mail or destination_client, dry_run
-                    ),
-                    "folders",
-                )
-            if "tags" in wanted_parts:
-                merge(
-                    copy_tags(settings, destination_mail or destination_client, dry_run),
-                    "tags",
-                )
-            if "cos" in wanted_parts:
-                merge(
-                    copy_cos(
-                        settings,
-                        destination,
-                        destination_email,
-                        dry_run,
-                    ),
-                    "cos",
-                )
-            if "attributes" in wanted_parts:
-                merge(
-                    copy_account_attributes(
-                        settings,
-                        destination,
-                        destination_email,
-                        dry_run,
-                        ignore=sync.get("settings_attr_ignore") or [],
-                        keep_admin_permissions=bool(
-                            sync.get("keep_admin_permissions", False)
+                if "settings" in wanted_parts:
+                    merge(
+                        copy_signatures(settings, destination_client, dry_run),
+                        "signatures",
+                    )
+                    merge(
+                        copy_identities(settings, destination_client, dry_run),
+                        "identities",
+                    )
+                if "prefs" in wanted_parts:
+                    merge(
+                        copy_preferences(
+                            config,
+                            settings,
+                            destination_client,
+                            dry_run,
+                            options=sync,
+                            signature_id_map=signature_ids,
                         ),
-                    ),
-                    "account_attrs",
-                )
-            if "filters" in wanted_parts:
-                filter_client = destination_mail or destination_client
-                merge(copy_filters(settings, filter_client, dry_run, "in"), "filters_in")
-                merge(copy_filters(settings, filter_client, dry_run, "out"), "filters_out")
-            if "lists" in wanted_parts:
-                merge(
-                    copy_white_black_lists(settings, destination_client, dry_run),
-                    "lists",
-                )
-            if "shares" in wanted_parts:
-                merge(
-                    copy_outgoing_shares(
-                        config,
-                        settings,
-                        destination_client,
-                        destination_email,
-                        dry_run,
-                        options=sync,
-                        destination_session=destination,
-                        destination_mail=destination_mail,
-                    ),
-                    "shares",
-                )
-            if "permissions" in wanted_parts:
-                merge(
-                    copy_permissions(
-                        settings, destination_mail or destination_client, dry_run
-                    ),
-                    "permissions",
-                )
+                        "prefs",
+                    )
+                if "folder" in wanted_parts:
+                    merge(
+                        copy_empty_folders(
+                            settings,
+                            destination_mail or destination_client,
+                            dry_run,
+                        ),
+                        "folder",
+                    )
+                if "folders" in wanted_parts or "color" in wanted_parts:
+                    merge(
+                        copy_folder_colors(
+                            settings,
+                            destination_mail or destination_client,
+                            dry_run,
+                        ),
+                        "folders",
+                    )
+                if "tags" in wanted_parts:
+                    merge(
+                        copy_tags(
+                            settings,
+                            destination_mail or destination_client,
+                            dry_run,
+                        ),
+                        "tags",
+                    )
+                if "cos" in wanted_parts:
+                    merge(
+                        copy_cos(
+                            settings,
+                            destination_session,
+                            destination_email,
+                            dry_run,
+                        ),
+                        "cos",
+                    )
+                if "attributes" in wanted_parts:
+                    merge(
+                        copy_account_attributes(
+                            settings,
+                            destination_session,
+                            destination_email,
+                            dry_run,
+                            ignore=sync.get("settings_attr_ignore") or [],
+                            keep_admin_permissions=bool(
+                                sync.get("keep_admin_permissions", False)
+                            ),
+                        ),
+                        "account_attrs",
+                    )
+                if "filters" in wanted_parts:
+                    filter_client = destination_mail or destination_client
+                    merge(
+                        copy_filters(settings, filter_client, dry_run, "in"),
+                        "filters_in",
+                    )
+                    merge(
+                        copy_filters(settings, filter_client, dry_run, "out"),
+                        "filters_out",
+                    )
+                if "lists" in wanted_parts:
+                    merge(
+                        copy_white_black_lists(
+                            settings, destination_client, dry_run
+                        ),
+                        "lists",
+                    )
+                if "shares" in wanted_parts:
+                    merge(
+                        copy_outgoing_shares(
+                            config,
+                            settings,
+                            destination_client,
+                            destination_email,
+                            dry_run,
+                            options=sync,
+                            destination_session=destination_session,
+                            destination_mail=destination_mail,
+                        ),
+                        "shares",
+                    )
+                if "permissions" in wanted_parts:
+                    merge(
+                        copy_permissions(
+                            settings,
+                            destination_mail or destination_client,
+                            dry_run,
+                        ),
+                        "permissions",
+                    )
 
-            mountpoints = len(settings.get("mountpoints") or [])
-            if mountpoints:
-                record["warnings"].append(
-                    "%d partage(s) entrant(s) non recréé(s) : à remonter manuellement "
-                    "sur la destination." % mountpoints
+                mountpoints = len(settings.get("mountpoints") or [])
+                if mountpoints:
+                    record["warnings"].append(
+                        "%d partage(s) entrant(s) non recrees : a remonter "
+                        "manuellement sur la destination." % mountpoints
+                    )
+                record["counts"] = counts
+                record["errors"] = errors
+                record["ignored_shares"] = ignored_shares
+                record["status"] = (
+                    "partial" if errors else ("planned" if dry_run else "ok")
                 )
-            record["counts"] = counts
-            record["errors"] = errors
-            record["ignored_shares"] = ignored_shares
-            record["status"] = "partial" if errors else ("planned" if dry_run else "ok")
-            counters["partial" if errors else "ok"] += 1
-        except Exception as exc:  # noqa: BLE001
-            record["status"] = "failed"
-            record["error"] = describe_error(exc)
-            counters["failed"] += 1
+            except Exception as exc:  # noqa: BLE001
+                record["status"] = "failed"
+                record["error"] = describe_error(exc)
         record["finished_at"] = now_iso()
-        items.append(record)
-        if progress:
-            progress(index, total, "%s : %s" % (destination_email, record.get("status")))
+        return record
 
+    items = [None] * total
+    counters = {"ok": 0, "partial": 0, "failed": 0, "skipped": 0}
+    lock = threading.Lock()
+    completed = 0
+
+    def completed_task(index, record):
+        nonlocal completed
+        items[index - 1] = record
+        with lock:
+            completed += 1
+            if progress:
+                progress(
+                    completed,
+                    total,
+                    "%s : %s"
+                    % (record.get("destination", ""), record.get("status", "")),
+                )
+
+    workers = max(1, int(parallelism or 1))
+    if workers <= 1 or total <= 1:
+        for index, pair in enumerate(pairs, start=1):
+            if progress:
+                progress(
+                    index - 1,
+                    total,
+                    "Reglages %d/%d : %s"
+                    % (index, total, pair.get("source", "")),
+                )
+            completed_task(index, process_pair(pair))
+    else:
+        if progress:
+            progress(0, total, "Reglages en cours")
+        with ThreadPoolExecutor(
+            max_workers=min(workers, max(1, total))
+        ) as executor:
+            futures = {
+                executor.submit(process_pair, pair): index
+                for index, pair in enumerate(pairs, start=1)
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                completed_task(index, future.result())
+
+    for item in items:
+        if not item:
+            continue
+        status = item.get("status", "failed")
+        if status in counters:
+            counters[status] += 1
+        elif status == "planned":
+            counters["ok"] += 1
+        else:
+            counters["failed"] += 1
     ignored_share_count = sum(
-        len(item.get("ignored_shares") or []) for item in items
+        len(item.get("ignored_shares") or []) for item in items if item
     )
     report = {
         "created_at": now_iso(),
@@ -1185,15 +1274,21 @@ def copy_account_settings(
         "profile_name": config.profile_name(),
         "source_host": config_module.store_host(config.connection("source")),
         "source_proxy_host": config_module.proxy_host(config.connection("source")),
-        "destination_host": config_module.store_host(config.connection("destination")),
-        "destination_proxy_host": config_module.proxy_host(config.connection("destination")),
+        "destination_host": config_module.store_host(
+            config.connection("destination")
+        ),
+        "destination_proxy_host": config_module.proxy_host(
+            config.connection("destination")
+        ),
         "total": total,
         "items": items,
         "summary": counters,
     }
     if not dry_run:
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        path = config.storage_path("report_path") / ("settings-%s.json" % stamp)
+        path = config.storage_path("report_path") / (
+            "settings-%s.json" % stamp
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:
             json.dump(report, handle, ensure_ascii=False, indent=1, default=str)

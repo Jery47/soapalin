@@ -615,6 +615,7 @@ def _run_import(
             only=users,
             dry_run=args.dry_run,
             options=options,
+            parallelism=getattr(args, "parallelism", 1),
             cancel=cancel,
             parts=["tags"],
         )
@@ -689,6 +690,7 @@ def _run_import(
             only=users,
             dry_run=args.dry_run,
             options=options,
+            parallelism=getattr(args, "parallelism", 1),
             cancel=cancel,
             parts=folder_parts,
         )
@@ -701,6 +703,7 @@ def _run_import(
             only=users,
             dry_run=args.dry_run,
             options=options,
+            parallelism=getattr(args, "parallelism", 1),
             cancel=cancel,
             parts=["settings", "prefs", "folders", "attributes"],
         )
@@ -718,6 +721,7 @@ def _run_import(
             only=users,
             dry_run=args.dry_run,
             options=options,
+            parallelism=getattr(args, "parallelism", 1),
             cancel=cancel,
             parts=parts,
         )
@@ -730,6 +734,7 @@ def _run_import(
             only=users,
             dry_run=args.dry_run,
             options=options,
+            parallelism=getattr(args, "parallelism", 1),
             cancel=cancel,
             parts=["shares"],
         )
@@ -750,6 +755,7 @@ def _run_import(
             only=users,
             dry_run=args.dry_run,
             options=options,
+            parallelism=getattr(args, "parallelism", 1),
             cancel=cancel,
             parts=["permissions"],
         )
@@ -948,6 +954,7 @@ def _run_diff(
         only=users,
         dry_run=False,
         options=options,
+        parallelism=getattr(args, "parallelism", 1),
         cancel=cancel,
         parts=["tags"],
     )

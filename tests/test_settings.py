@@ -1,7 +1,10 @@
+import tempfile
 import unittest
+from unittest import mock
 
 from soaplun import inventory as inventory_module
 from soaplun import settings as settings_module
+from soaplun.config import Config
 
 
 class FakeDestination:
@@ -170,6 +173,47 @@ class SettingsTests(unittest.TestCase):
         )
         self.assertEqual(result["white_added"], 1)
         self.assertEqual(destination.calls, [])
+
+
+class SettingsParallelTests(unittest.TestCase):
+    def test_account_settings_parallelism_reports_all_pairs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            plan = {
+                "accounts": [
+                    {"source": "a@example.com", "destination": "a@example.com"},
+                    {"source": "b@example.com", "destination": "b@example.com"},
+                ]
+            }
+
+            class Session:
+                def account_client(self, email):
+                    return object()
+
+                def mail_client(self, email):
+                    return object()
+
+            with mock.patch.object(
+                settings_module, "preflight", return_value={"ok": True}
+            ), mock.patch.object(
+                settings_module, "ZimbraSession", return_value=Session()
+            ), mock.patch.object(
+                settings_module.inventory_module,
+                "collect_account_settings",
+                return_value={"all_folders": []},
+            ), mock.patch.object(
+                settings_module,
+                "copy_empty_folders",
+                return_value={"created": 0, "skipped": 0, "errors": []},
+            ):
+                report = settings_module.copy_account_settings(
+                    config,
+                    plan,
+                    parts=["folder"],
+                    dry_run=True,
+                    parallelism=2,
+                )
+        self.assertEqual(report["summary"]["ok"], 2)
 
 
 class PreferencesTests(unittest.TestCase):
