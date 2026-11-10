@@ -217,6 +217,78 @@ class PreferencesTests(unittest.TestCase):
         self.assertNotIn("zimbraPrefBroken", applied)
 
 
+class FolderCreationTests(unittest.TestCase):
+    class Destination:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, name, content=None):
+            if name == "GetFolder":
+                return {
+                    "folder": {
+                        "absFolderPath": "/",
+                        "id": "1",
+                        "folder": [
+                            {"absFolderPath": "/Inbox", "id": "10"},
+                        ],
+                    }
+                }
+            self.calls.append((name, content or {}))
+            if name == "CreateFolder":
+                return {"folder": {"id": str(100 + len(self.calls))}}
+            return {}
+
+    def test_creates_missing_empty_folders_in_parent_order(self):
+        destination = self.Destination()
+        result = settings_module.copy_empty_folders(
+            {
+                "all_folders": [
+                    {"path": "/Inbox", "name": "Inbox", "view": "message"},
+                    {"path": "/Inbox/Test", "name": "Test", "view": "message"},
+                    {
+                        "path": "/Inbox/Test/Child",
+                        "name": "Child",
+                        "view": "message",
+                    },
+                ]
+            },
+            destination,
+            dry_run=False,
+        )
+        self.assertEqual(result["created"], 2)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(result["errors"], [])
+        calls = [call for call in destination.calls if call[0] == "CreateFolder"]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][1]["folder"]["name"], "Test")
+        self.assertEqual(calls[0][1]["folder"]["l"], "10")
+        self.assertEqual(calls[1][1]["folder"]["name"], "Child")
+        self.assertEqual(calls[1][1]["folder"]["l"], "101")
+
+
+    def test_dry_run_counts_nested_folders(self):
+        destination = FolderCreationTests.Destination()
+        result = settings_module.copy_empty_folders(
+            {
+                "all_folders": [
+                    {"path": "/Inbox/Test", "name": "Test", "view": "message"},
+                    {
+                        "path": "/Inbox/Test/Child",
+                        "name": "Child",
+                        "view": "message",
+                    },
+                ]
+            },
+            destination,
+            dry_run=True,
+        )
+        self.assertEqual(result["created"], 2)
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(
+            [call for call in destination.calls if call[0] == "CreateFolder"],
+            [],
+        )
+
 class FolderColorTests(unittest.TestCase):
     class Destination:
         def __init__(self):

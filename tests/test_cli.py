@@ -406,6 +406,23 @@ class NewCliParserTests(unittest.TestCase):
         self.assertEqual(passed["actions"][0]["payload"]["attrs"], {})
         self.assertEqual(passed["actions"][0]["payload"]["cos_name"], "COS1")
 
+    def test_folder_and_color_elements_are_supported(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "folder",
+                "color",
+                "--type",
+                "account",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.elements, ["folder", "color"])
+
     def test_valid_migrate_resource(self):
         args = self.parsed(
             [

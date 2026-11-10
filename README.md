@@ -105,8 +105,8 @@ soapalin migrate all --type all --from src1 --to dst1
 Éléments valides :
 
 ```text
-account  : mail calendar contacts tasks briefcase cos settings tags filter
-           banlist whitelist share sendas sendonbehalfof
+account  : mail calendar contacts tasks briefcase cos folder color settings
+           tags filter banlist whitelist share sendas sendonbehalfof
 resource : mail calendar
 dl       : members
 ```
@@ -121,6 +121,18 @@ Il faut d'abord cr?er les COS, puis rafra?chir l'inventaire destination :
 soapalin --foreground provision cos all --from src1 --to dst1
 soapalin --foreground server inventory dst1 --no-stats
 soapalin --foreground migrate users.csv cos --type account --from src1 --to dst1
+```
+
+### Dossiers
+
+- `folder` cr?e uniquement l'arborescence de dossiers manquante, sans copier les messages.
+- `color` applique uniquement les couleurs aux dossiers existants, sans cr?er de dossier.
+- Les deux peuvent ?tre combin?s : `folder` est ex?cut? avant `color`.
+
+```bash
+soapalin migrate users.csv folder --type account --from src1 --to dst1
+soapalin migrate users.csv color --type account --from src1 --to dst1
+soapalin migrate users.csv folder color --type account --from src1 --to dst1
 ```
 
 ### Différentiel

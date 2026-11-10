@@ -26,6 +26,7 @@
 
 ### Anciens flags non couverts directement
 
+- `folder` cree l'arborescence de dossiers vide ; `color` applique uniquement les couleurs des dossiers existants.
 - `provision account` inclut la COS dans `CreateAccount` et ajoute un `modify_account` dependant de la creation pour confirmer la COS.
 - `cos` est de nouveau un element de `migrate` pour affecter la COS aux comptes existants ; `provision cos` cree la COS sur la destination.
 - `--import-cos`, `--import-dl`, `--import-distribution-lists`, `--create-resource`, `--import-resource`, `--label` : alias supprimes.
@@ -97,7 +98,7 @@ Options de migrate :
     --parallelism N (defaut : 1)
     --keep-tgz [true|false] --keep-tgz-days N
     --json (uniquement avec --dry-run)
-  account  : mail calendar contacts tasks briefcase cos settings tags
+  account  : mail calendar contacts tasks briefcase cos folder color settings tags
              filter banlist whitelist share sendas sendonbehalfof
   resource : mail calendar
   dl       : members

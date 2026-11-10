@@ -50,6 +50,8 @@ ACCOUNT_ELEMENTS = (
     "tasks",
     "briefcase",
     "cos",
+    "folder",
+    "color",
     "settings",
     "tags",
     "filter",
@@ -158,7 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    --parallelism N (defaut : 1)\n"
             "    --keep-tgz [true|false] --keep-tgz-days N\n"
             "    --json (uniquement avec --dry-run)\n"
-            "  account  : mail calendar contacts tasks briefcase cos settings tags\n"
+            "  account  : mail calendar contacts tasks briefcase cos folder color settings tags\n"
             "             filter banlist whitelist share sendas sendonbehalfof\n"
             "  resource : mail calendar\n"
             "  dl       : members\n"
@@ -676,6 +678,21 @@ def _run_import(
             for error in (report.get("errors") or [])[:20]:
                 _out("ERREUR TAG : %s" % error, file=sys.stderr)
             failures += 1 if summary.get("failed") else 0
+    folder_parts = [
+        value for value in ("folder", "color") if value in steps
+    ]
+    if folder_parts:
+        report = settings_module.copy_account_settings(
+            config,
+            plan,
+            progress=_progress,
+            only=users,
+            dry_run=args.dry_run,
+            options=options,
+            cancel=cancel,
+            parts=folder_parts,
+        )
+        failures += _print_summary("Dossiers", report)
     if "settings" in steps:
         report = settings_module.copy_account_settings(
             config,

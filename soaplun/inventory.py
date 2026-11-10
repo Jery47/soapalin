@@ -534,6 +534,7 @@ def collect_folders(
                 "path": path,
                 "id": str(folder.get("id") or ""),
                 "name": str(folder.get("name") or ""),
+                "view": str(folder.get("view") or ""),
                 "color": str(color) if color not in {None, ""} else "",
                 "rgb": str(rgb) if rgb not in {None, ""} else "",
                 "acl": folder.get("acl") or {},
@@ -611,6 +612,7 @@ def collect_account_settings(session: ZimbraSession, email: str) -> Dict[str, An
         "mountpoints": [],
         "permissions": [],
         "folders": [],
+        "all_folders": [],
         "tags": [],
         "account_attrs": {},
         "cos_name": "",
@@ -676,6 +678,11 @@ def collect_account_settings(session: ZimbraSession, email: str) -> Dict[str, An
         )
     settings["folders"] = safe(
         "folders", lambda: collect_folder_colors(mail) if mail else [], []
+    )
+    settings["all_folders"] = safe(
+        "all folders",
+        lambda: collect_folders(mail, colored_only=False) if mail else [],
+        [],
     )
     settings["tags"] = safe(
         "tags", lambda: collect_tags(mail) if mail else [], []

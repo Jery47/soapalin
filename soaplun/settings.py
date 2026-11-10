@@ -21,7 +21,9 @@ Progress = Optional[Callable[[int, int, str], None]]
 SETTING_PARTS = (
     "settings",
     "prefs",
+    "folder",
     "folders",
+    "color",
     "attributes",
     "tags",
     "cos",
@@ -516,6 +518,88 @@ def copy_folder_colors(
     return result
 
 
+def copy_empty_folders(
+    source_settings: Dict[str, Any], destination, dry_run: bool
+) -> Dict[str, Any]:
+    """Create missing source folders on the destination, without messages."""
+    result = {"created": 0, "skipped": 0, "errors": []}
+    source_folders = (
+        source_settings.get("all_folders")
+        or source_settings.get("folders")
+        or []
+    )
+    if not source_folders:
+        return result
+    try:
+        payload = destination.request(
+            "GetFolder", {"folder": {"path": "/"}, "depth": "20"}
+        )
+        root = unwrap(payload, "folder")
+        if isinstance(root, list):
+            root = root[0] if root else {}
+        root_id = str((root or {}).get("id") or "")
+        destination_folders = inventory_module.collect_folders(
+            destination, colored_only=False
+        )
+    except Exception as exc:  # noqa: BLE001
+        result["errors"].append("dossiers: %s" % describe_error(exc))
+        return result
+
+    existing = {"/": root_id} if root_id else {}
+    for folder in destination_folders:
+        path = folder.get("path") or ""
+        if path:
+            existing[path] = str(folder.get("id") or "")
+
+    ordered = sorted(
+        source_folders,
+        key=lambda item: (str(item.get("path") or "").count("/"), item.get("path") or ""),
+    )
+    for folder in ordered:
+        path = str(folder.get("path") or "")
+        if not path or path == "/" or path in existing:
+            result["skipped"] += 1
+            continue
+        parent_path = path.rsplit("/", 1)[0] or "/"
+        parent_id = existing.get(parent_path) or ""
+        if not parent_id:
+            result["errors"].append(
+                "dossier %s: parent %s absent" % (path, parent_path)
+            )
+            continue
+        if dry_run:
+            result["created"] += 1
+            existing[path] = "__dry_run__"
+            continue
+        name = str(folder.get("name") or path.rsplit("/", 1)[-1])
+        folder_payload = {"name": name, "l": parent_id}
+        view = str(folder.get("view") or "")
+        if view:
+            folder_payload["view"] = view
+        try:
+            response = destination.request(
+                "CreateFolder", {"folder": folder_payload}
+            )
+            created = unwrap(response, "folder")
+            if isinstance(created, list):
+                created = created[0] if created else {}
+            folder_id = str((created or {}).get("id") or "")
+            if not folder_id:
+                folder_id = resolve_folder_id(destination, path)
+            if not folder_id:
+                result["errors"].append(
+                    "dossier %s: identifiant introuvable apres creation" % path
+                )
+                continue
+            existing[path] = folder_id
+            result["created"] += 1
+        except Exception as exc:  # noqa: BLE001
+            result["errors"].append(
+                "dossier %s: %s" % (path, describe_error(exc))
+            )
+    return result
+
+
 def copy_tags(
     source_settings: Dict[str, Any],
     destination,
@@ -959,7 +1043,7 @@ def copy_account_settings(
             destination_client = destination.account_client(destination_email)
             destination_mail = None
             if wanted_parts.intersection(
-                {"filters", "permissions", "folders", "shares", "tags"}
+                {"filters", "permissions", "folder", "folders", "color", "shares", "tags"}
             ):
                 destination_mail = destination.mail_client(destination_email)
 
@@ -996,7 +1080,14 @@ def copy_account_settings(
                     ),
                     "prefs",
                 )
-            if "folders" in wanted_parts:
+            if "folder" in wanted_parts:
+                merge(
+                    copy_empty_folders(
+                        settings, destination_mail or destination_client, dry_run
+                    ),
+                    "folder",
+                )
+            if "folders" in wanted_parts or "color" in wanted_parts:
                 merge(
                     copy_folder_colors(
                         settings, destination_mail or destination_client, dry_run
