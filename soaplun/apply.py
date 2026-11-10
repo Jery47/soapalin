@@ -19,6 +19,7 @@ from zimsoap.client import ZimbraSoapServerError
 from . import config as config_module
 from .connections import ZimbraSession, describe_error
 from .inventory import now_iso
+from .diff import action_sort_key
 
 Progress = Optional[Callable[[int, int, str], None]]
 

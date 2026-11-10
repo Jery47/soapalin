@@ -39,6 +39,32 @@ class FakeSession:
 
 
 class ApplyParallelTests(unittest.TestCase):
+    def test_parallel_plan_groups_actions(self):
+        config = mock.Mock()
+        actions = [
+            {
+                "id": "modify_account:u%d@example.com" % index,
+                "kind": "modify_account",
+                "target": "u%d@example.com" % index,
+                "payload": {"name": "u%d@example.com" % index},
+            }
+            for index in range(2)
+        ]
+        with mock.patch.object(
+            apply_module, "ZimbraSession"
+        ), mock.patch.object(
+            apply_module,
+            "_apply_actions_parallel",
+            return_value=([], {"ok": 0, "failed": 0, "skipped": 0, "planned": 0}, {}),
+        ) as parallel, mock.patch.object(
+            apply_module, "_finish_report", return_value={}
+        ):
+            result = apply_module._apply_plan_inner(
+                config, {"actions": actions}, parallelism=2
+            )
+        self.assertEqual(result, {})
+        self.assertTrue(parallel.called)
+
     def test_parallel_actions_report_all_results(self):
         config = mock.Mock()
         config.current_profile.return_value = "p"
