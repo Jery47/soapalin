@@ -629,6 +629,39 @@ class NewCliParserTests(unittest.TestCase):
         self.assertEqual(args.job_command, "status")
         self.assertEqual(args.job_id, "abc123")
 
+    def test_folder_and_color_are_passed_to_import_steps(self):
+        args = SimpleNamespace(
+            from_label="src1",
+            to_label="dst1",
+            csv="users.csv",
+            retry_failed=None,
+            dry_run=False,
+            differential=None,
+            keep_tgz=False,
+            keep_tgz_days=0,
+            parallelism=1,
+            mapping_domain="",
+            mapping_host="",
+        )
+        with mock.patch.object(
+            cli, "_load_snapshots", return_value=({"accounts": []}, {})
+        ), mock.patch.object(
+            migrate_cmd, "_users", return_value=["u@example.com"]
+        ), mock.patch.object(
+            cli, "_base_options", return_value={}
+        ), mock.patch.object(
+            cli, "_build_plan", return_value={"actions": []}
+        ), mock.patch.object(
+            cli, "_run_import", return_value=0
+        ) as run_import:
+            self.assertEqual(
+                migrate_cmd._run_account(
+                    mock.Mock(), args, ["folder", "color"]
+                ),
+                0,
+            )
+        self.assertEqual(run_import.call_args.args[5], ["folder", "color"])
+
     def test_type_all_handler_order(self):
         args = self.parsed(
             [

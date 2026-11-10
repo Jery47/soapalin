@@ -269,7 +269,7 @@ def _run_account(config, args, elements):
     contents = [
         value
         for value in account_elements
-        if value in ("mail", "calendar", "contacts", "tasks")
+        if value in ("mail", "calendar", "contacts", "tasks", "briefcase")
     ]
     steps = []
     for value in account_elements:
@@ -277,6 +277,8 @@ def _run_account(config, args, elements):
             steps.append("settings")
         elif value == "tags":
             steps.append("tags")
+        elif value in ("folder", "color"):
+            steps.append(value)
         elif value in ("filter",):
             steps.append("filters")
         elif value in ("banlist", "whitelist"):
