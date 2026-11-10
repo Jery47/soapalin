@@ -241,7 +241,7 @@ def _run_account(config, args, elements):
                 runtime,
                 cancel=cli._JOB_STOP_EVENT,
             )
-        return failures
+        return 2 if failures else 0
     return cli._run_import(
         config,
         plan,
