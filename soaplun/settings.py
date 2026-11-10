@@ -907,6 +907,7 @@ def copy_incoming_shares(
     destination_email: str,
     dry_run: bool,
     options: Optional[Dict[str, Any]] = None,
+    destination_mail=None,
 ) -> Dict[str, Any]:
     """Mount shares already accepted on the source for the destination user."""
     result = {"created": 0, "skipped": 0, "errors": []}
@@ -914,10 +915,11 @@ def copy_incoming_shares(
     if not source_shares:
         return result
     effective = options or {}
+    target = destination_mail or destination_client
     try:
         from .apply import resolve_id
 
-        root_payload = destination_client.request(
+        root_payload = target.request(
             "GetFolder", {"folder": {"path": "/"}}
         )
         root = unwrap(root_payload, "folder")
@@ -943,7 +945,7 @@ def copy_incoming_shares(
 
     def owner_client(email):
         if email not in owner_clients:
-            owner_clients[email] = destination_session.account_client(email)
+            owner_clients[email] = destination_session.mail_client(email)
         return owner_clients[email]
 
     for share in source_shares:
@@ -992,7 +994,7 @@ def copy_incoming_shares(
                 link["view"] = view
             if rights:
                 link["perm"] = rights
-            destination_client.create_mountpoint(**link)
+            target.create_mountpoint(**link)
             existing.add(key)
             result["created"] += 1
         except Exception as exc:  # noqa: BLE001
@@ -1293,6 +1295,7 @@ def copy_account_settings(
                             destination_email,
                             dry_run,
                             options=sync,
+                            destination_mail=destination_mail,
                         ),
                         "shares_in",
                     )

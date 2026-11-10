@@ -205,8 +205,9 @@ class IncomingShareTests(unittest.TestCase):
 
         def account_client(self, email):
             self.owners.append(email)
-            owner = self
+            return self.mail_client(email)
 
+        def mail_client(self, email):
             class OwnerClient:
                 def request(self, name, content=None):
                     return {"folder": {"id": "folder-id"}}
