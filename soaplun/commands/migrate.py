@@ -1,0 +1,330 @@
+"""`migrate` sub-command."""
+
+import argparse
+
+
+def add_parser(subparsers):
+    parser = subparsers.add_parser(
+        "migrate",
+        help="copier les donnees vers la destination",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Exemples:\n"
+            "  soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1\n"
+            "  soapalin migrate all --type account --from src1 --to dst1\n"
+            "  soapalin migrate resources.csv mail calendar --type resource --from src1 --to dst1\n"
+            "  soapalin migrate lists.csv members --type dl --from src1 --to dst1\n"
+            "  soapalin migrate all --type all --from src1 --to dst1\n"
+            "\n"
+            "Attention : --differential accepte une date optionnelle et peut avaler\n"
+            "le CSV positionnel. Ecrivez le CSV avant l'option, ou utilisez\n"
+            "--differential=YYYY-MM-DD.\n"
+        ),
+    )
+    from ..cli import _add_connection_options
+
+    parser.add_argument("csv", metavar="CSV|all")
+    parser.add_argument("elements", nargs="*", default=["all"])
+    _add_connection_options(parser)
+    parser.add_argument(
+        "--type", choices=("account", "resource", "dl", "all"), required=True
+    )
+    parser.add_argument(
+        "--differential",
+        nargs="?",
+        const=True,
+        default=None,
+        type=_iso_date,
+        metavar="YYYY-MM-DD",
+    )
+    parser.add_argument(
+        "--retry-failed",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="RAPPORT",
+    )
+    parser.add_argument("--parallelism", type=int, default=4)
+    parser.add_argument("--keep-tgz", nargs="?", const=True, default=False,
+                        type=_bool)
+    parser.add_argument("--keep-tgz-days", type=int, default=0)
+    parser.add_argument("--json", action="store_true")
+    return parser
+
+
+def _iso_date(value):
+    from ..cli import iso_date
+
+    return iso_date(value)
+
+
+def _bool(value):
+    from ..cli import _parse_bool
+
+    return _parse_bool(value)
+
+
+def _runtime(args, **extra):
+    from types import SimpleNamespace
+
+    values = {
+        "server_source": args.from_label,
+        "server_destination": args.to_label,
+        "dry_run": args.dry_run,
+        "keep_tgz": args.keep_tgz,
+        "keep_tgz_days": args.keep_tgz_days,
+        "parallelism": args.parallelism,
+        "mapping_domain": args.mapping_domain,
+        "mapping_host": args.mapping_host,
+        "since": args.differential.isoformat()
+        if hasattr(args.differential, "isoformat")
+        else "",
+        "create_user": False,
+        "create_domain": "",
+        "create_cos": "",
+        "create_dl": "",
+        "create_resources": "",
+        "import_resources": "",
+        "adminrights": False,
+        "password": "",
+        "random_password": False,
+    }
+    values.update(extra)
+    return SimpleNamespace(**values)
+
+
+def _users(config, args, source):
+    from .. import cli
+
+    if str(args.csv).strip().lower() == "all":
+        users = [
+            str(item.get("name"))
+            for item in source.get("accounts", [])
+            if item.get("name")
+        ]
+    else:
+        users = cli.read_users(args.csv)
+    if args.retry_failed is not None:
+        retry = cli._retry_users(
+            config, args.retry_failed or "", migrate_type=args.type
+        )
+        selected = {str(value).lower() for value in retry}
+        if str(args.csv).strip().lower() != "all":
+            users = [value for value in users if value.lower() in selected]
+        else:
+            users = retry
+    return users
+
+
+def _account_elements(elements):
+    from ..cli import ACCOUNT_ELEMENTS
+
+    return [value for value in elements if value in ACCOUNT_ELEMENTS]
+
+
+def _resource_elements(elements):
+    from ..cli import RESOURCE_ELEMENTS
+
+    return [value for value in elements if value in RESOURCE_ELEMENTS]
+
+
+def _run_account(config, args, elements):
+    from .. import cli
+
+    source, _ = cli._load_snapshots(config, args.from_label, args.to_label)
+    users = _users(config, args, source)
+    if not users:
+        raise RuntimeError("Aucun compte a migrer.")
+    account_elements = _account_elements(elements)
+    contents = [
+        value
+        for value in account_elements
+        if value in ("mail", "calendar", "contacts", "tasks")
+    ]
+    steps = []
+    for value in account_elements:
+        if value == "settings":
+            steps.append("settings")
+        elif value == "tags":
+            steps.append("tags")
+        elif value in ("filter",):
+            steps.append("filters")
+        elif value in ("banlist", "whitelist"):
+            steps.append("lists")
+        elif value == "share":
+            steps.append("shares")
+        elif value in ("sendas", "sendonbehalfof"):
+            steps.append("permissions")
+    runtime = _runtime(args)
+    options = cli._base_options(config, runtime)
+    if contents:
+        options["content_types"] = contents
+    plan = cli._build_plan(
+        config, users, options, args.from_label, args.to_label
+    )
+    if args.differential is not None:
+        failures = 0
+        if contents:
+            failures += cli._run_diff(
+                config,
+                plan,
+                options,
+                users,
+                runtime,
+                cancel=cli._JOB_STOP_EVENT,
+                force_sync_tags=True,
+            )
+        if steps and not args.dry_run:
+            failures += cli._run_import(
+                config,
+                plan,
+                options,
+                users,
+                [],
+                steps,
+                runtime,
+                cancel=cli._JOB_STOP_EVENT,
+            )
+        return failures
+    return cli._run_import(
+        config,
+        plan,
+        options,
+        users,
+        contents,
+        steps,
+        runtime,
+        cancel=cli._JOB_STOP_EVENT,
+    )
+
+
+def _resource_mailboxes(config, args, elements):
+    from .. import cli
+    from ..mailbox import TAG_CONTENT_SPECS  # validation side-effect
+
+    source, _ = cli._load_snapshots(config, args.from_label, args.to_label)
+    names = (
+        [str(item.get("name")) for item in source.get("resources", []) if item.get("name")]
+        if str(args.csv).strip().lower() == "all"
+        else cli.read_object_names(args.csv)
+    )
+    selected = {str(name).lower() for name in names}
+    mailboxes = []
+    for item in source.get("resources", []):
+        name = str(item.get("name") or "")
+        if not name or name.lower() not in selected:
+            continue
+        mailboxes.append(
+            {
+                "source": name,
+                "destination": config.map_email(name),
+                "type": "resource",
+                "size": None,
+                "messages": None,
+                "destination_status": "existing",
+                "note": "Ressource calendrier",
+            }
+        )
+    return names, mailboxes, _resource_elements(elements)
+
+
+def _run_resource(config, args, elements):
+    from .. import cli
+    from .. import mailbox as mailbox_module
+
+    names, mailboxes, contents = _resource_mailboxes(config, args, elements)
+    if not mailboxes:
+        raise RuntimeError("Aucune ressource a migrer.")
+    if args.dry_run:
+        cli._out(
+            "Simulation ressources : %d ressource(s), contenus=%s."
+            % (len(mailboxes), ", ".join(contents))
+        )
+        return 0
+    options = _runtime(args)
+    plan = {"mailboxes": mailboxes, "options": vars(options)}
+    if args.differential is not None:
+        report = mailbox_module.copy_mailboxes_incremental(
+            config,
+            plan,
+            progress=cli._progress,
+            only=names,
+            keep_archives=bool(args.keep_tgz),
+            options=vars(options),
+            content_types=contents,
+            cancel=cli._JOB_STOP_EVENT,
+        )
+    else:
+        report = mailbox_module.copy_mailboxes_chunked(
+            config,
+            plan,
+            progress=cli._progress,
+            only=names,
+            keep_archives=bool(args.keep_tgz),
+            options=vars(options),
+            content_types=contents,
+            cancel=cli._JOB_STOP_EVENT,
+        )
+    return cli._print_summary("Ressources", report)
+
+
+def _run_dl(config, args, elements):
+    from .. import cli
+    from .. import diff as diff_module
+    from ..apply import apply_plan
+
+    if "members" not in elements:
+        raise RuntimeError("Le type dl ne supporte que l'element members.")
+    source, destination = cli._load_snapshots(
+        config, args.from_label, args.to_label
+    )
+    names = (
+        [str(item.get("name")) for item in source.get("distribution_lists", []) if item.get("name")]
+        if str(args.csv).strip().lower() == "all"
+        else cli.read_object_names(args.csv)
+    )
+    runtime = _runtime(args)
+    options = cli._base_options(config, runtime)
+    plan = diff_module.generate_plan(
+        config,
+        source,
+        destination,
+        options=options,
+        selection={"distribution_lists": names},
+        category="distribution_lists",
+    )
+    report = apply_plan(
+        config,
+        plan,
+        progress=cli._progress,
+        dry_run=args.dry_run,
+        kinds={"add_dl_member"},
+        options=options,
+        cancel=cli._JOB_STOP_EVENT,
+    )
+    return cli._print_summary("Listes", report)
+
+
+def run(args):
+    from .. import cli
+
+    config = cli.config_module.Config()
+    config.use_servers(args.from_label, args.to_label)
+    if args.type == "all":
+        failures = 0
+        account_elements = _account_elements(args.elements)
+        resource_elements = _resource_elements(args.elements)
+        if account_elements:
+            failures += _run_account(config, args, account_elements)
+        if resource_elements:
+            failures += _run_resource(config, args, resource_elements)
+        if "members" in args.elements:
+            failures += _run_dl(config, args, ["members"])
+        return failures
+    if args.type == "account":
+        return _run_account(config, args, args.elements)
+    if args.type == "resource":
+        return _run_resource(config, args, args.elements)
+    if args.type == "dl":
+        return _run_dl(config, args, args.elements)
+    raise RuntimeError("Type de migration inconnu : %s" % args.type)

@@ -1391,6 +1391,7 @@ def copy_mailboxes(
         record: Dict[str, Any] = {
             "source": source_email,
             "destination": target_email,
+            "type": item.get("type", "account"),
             "size": item.get("size"),
             "messages": item.get("messages"),
             "started_at": now_iso(),
@@ -2151,6 +2152,7 @@ def _copy_incremental_account(
     record: Dict[str, Any] = {
         "source": source_email,
         "destination": target_email,
+        "type": item.get("type", "account"),
         "size": item.get("size"),
         "messages": item.get("messages"),
         "started_at": now_iso(),

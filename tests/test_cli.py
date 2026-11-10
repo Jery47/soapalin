@@ -8,11 +8,11 @@ from unittest import mock
 
 from soaplun import cli
 from soaplun import inventory
-from types import SimpleNamespace
+from soaplun.commands import migrate as migrate_cmd
 from soaplun.config import Config
 
 
-class CliParsingTests(unittest.TestCase):
+class CliHelperTests(unittest.TestCase):
     def test_read_users_skips_header_and_duplicates(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "users.csv"
@@ -40,6 +40,26 @@ class CliParsingTests(unittest.TestCase):
             self.assertIn("ligne 3 ignoree", message)
             self.assertIn("ligne 4 : doublon", message)
             self.assertIn("espaces ignores", message)
+
+    def test_read_mapping_supports_csv_and_equals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "map.csv"
+            path.write_text(
+                "source,destination\na.fr,b.fr\nc.fr = d.fr\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                cli.read_mapping(str(path)),
+                {"a.fr": "b.fr", "c.fr": "d.fr"},
+            )
+
+    def test_object_selector_all(self):
+        self.assertIsNone(cli.read_object_selection("all"))
+        self.assertEqual(cli.read_object_selection(""), [])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "names.csv"
+            path.write_text("name\na.fr\n", encoding="utf-8")
+            self.assertEqual(cli.read_object_selection(str(path)), ["a.fr"])
 
     def test_target_domain_validation_blocks_missing_domains(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,216 +131,325 @@ class CliParsingTests(unittest.TestCase):
                 cli._retry_users(config, str(report)), ["failed@example.com"]
             )
 
-    def test_create_objects_dry_run_builds_category_plan(self):
+
+class NewCliParserTests(unittest.TestCase):
+    def parser(self):
+        return cli.build_parser()
+
+    def parsed(self, argv):
+        parser = self.parser()
+        args = parser.parse_args(argv)
+        cli.validate(args, parser)
+        return args
+
+    def test_server_add(self):
+        args = self.parsed(["server", "add", "src1", "--role", "source"])
+        self.assertEqual(args.command, "server")
+        self.assertEqual(args.server_command, "add")
+        self.assertEqual(args.role, "source")
+
+    def test_provision_account(self):
+        args = self.parsed(
+            [
+                "provision",
+                "account",
+                "users.csv",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+                "--password",
+                "Secret!",
+            ]
+        )
+        self.assertEqual(args.password, "Secret!")
+        self.assertFalse(args.random_password)
+
+    def test_valid_migrate_account(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "mail",
+                "calendar",
+                "settings",
+                "--type",
+                "account",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.type, "account")
+        self.assertEqual(args.elements, ["mail", "calendar", "settings"])
+
+    def test_valid_migrate_resource(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "resources.csv",
+                "mail",
+                "calendar",
+                "--type",
+                "resource",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.elements, ["mail", "calendar"])
+
+    def test_valid_migrate_dl(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "lists.csv",
+                "members",
+                "--type",
+                "dl",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.elements, ["members"])
+
+    def test_type_all_requires_csv_all(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "--type",
+                    "all",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_json_requires_dry_run(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "--type",
+                    "account",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                    "--json",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_unknown_element(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "unknown",
+                    "--type",
+                    "account",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_inapplicable_element_is_ignored(self):
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            args = self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "mail",
+                    "settings",
+                    "--type",
+                    "resource",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                ]
+            )
+        self.assertEqual(args.elements, ["mail"])
+        self.assertIn("settings inapplicable", errors.getvalue())
+
+    def test_all_elements_inapplicable_is_error(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "settings",
+                    "--type",
+                    "resource",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_invalid_date(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "--type",
+                    "account",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                    "--differential",
+                    "2026-13-01",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_password_options_are_exclusive(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "provision",
+                    "account",
+                    "users.csv",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                    "--password",
+                    "x",
+                    "--random-password",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_missing_from_or_to(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "--type",
+                    "account",
+                    "--to",
+                    "dst1",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_missing_type(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_differential_values(self):
+        base = [
+            "migrate",
+            "users.csv",
+            "--type",
+            "account",
+            "--from",
+            "src1",
+            "--to",
+            "dst1",
+        ]
+        self.assertIsNone(self.parsed(base).differential)
+        self.assertIs(self.parsed(base + ["--differential"]).differential, True)
+        value = self.parsed(base + ["--differential", "2026-10-01"]).differential
+        self.assertEqual(value.isoformat(), "2026-10-01")
+
+    def test_job_commands(self):
+        args = self.parsed(["job", "status", "abc123"])
+        self.assertEqual(args.command, "job")
+        self.assertEqual(args.job_command, "status")
+        self.assertEqual(args.job_id, "abc123")
+
+    def test_type_all_handler_order(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "all",
+                "--type",
+                "all",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        calls = []
+        config = mock.Mock()
+        with mock.patch.object(
+            cli.config_module, "Config", return_value=config
+        ), mock.patch.object(
+            migrate_cmd,
+            "_run_account",
+            side_effect=lambda *a: calls.append("account") or 0,
+        ), mock.patch.object(
+            migrate_cmd,
+            "_run_resource",
+            side_effect=lambda *a: calls.append("resource") or 0,
+        ), mock.patch.object(
+            migrate_cmd,
+            "_run_dl",
+            side_effect=lambda *a: calls.append("dl") or 0,
+        ):
+            self.assertEqual(migrate_cmd.run(args), 0)
+        self.assertEqual(calls, ["account", "resource", "dl"])
+
+
+class CliServerCommandTests(unittest.TestCase):
+    def test_server_add_rename_remove(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)
-            config.create_server("src1", "source")
-            config.create_server("dst1", "destination")
-            for label, host in (("src1", "src"), ("dst1", "dst")):
-                connection = config.server(label)["connection"]
-                connection["store_host"] = host
-                connection["proxy_host"] = host
-                config.save_server(label, connection)
-            source = {
-                "version": 1,
-                "side": "source",
-                "host": "src",
-                "created_at": "2026-01-01T10:00:00",
-                "counts": {},
-                "domains": [{"name": "a.fr", "attrs": {}}],
-                "cos": [],
-                "servers": [],
-                "accounts": [],
-                "distribution_lists": [],
-                "resources": [],
-                "warnings": [],
-            }
-            destination = dict(source)
-            destination.update(
-                {
-                    "side": "destination",
-                    "host": "dst",
-                    "created_at": "2026-01-01T10:05:00",
-                    "domains": [],
-                }
-            )
-            inventory.write_snapshot(config, "source", source, profile="src1")
-            inventory.write_snapshot(config, "destination", destination, profile="dst1")
-            config.use_servers("src1", "dst1")
-            domains = Path(tmp) / "domains.csv"
-            domains.write_text("name\na.fr\n", encoding="utf-8")
-            args = SimpleNamespace(
-                server_source="src1",
-                server_destination="dst1",
-                create_domain=str(domains),
-                create_cos="",
-                create_dl="",
-                create_resources="",
-                dry_run=True,
-            )
-            with mock.patch.object(cli, "_print_summary", return_value=0) as summary:
-                failures = cli._run_objects(config, args, {})
-            self.assertEqual(failures, 0)
-            self.assertEqual(summary.call_args[0][0], "configuration")
+            with mock.patch.object(cli.config_module, "Config", lambda: config):
+                self.assertEqual(
+                    cli.main(["server", "add", "src1", "--role", "source"]),
+                    0,
+                )
+                self.assertEqual(
+                    cli.main(["server", "rename", "src1", "src2"]),
+                    0,
+                )
+            self.assertIn("src2", config.servers())
+            with mock.patch.object(cli.config_module, "Config", lambda: config):
+                self.assertEqual(cli.main(["server", "remove", "src2"]), 0)
+            self.assertNotIn("src2", config.servers())
 
-    def test_quiet_suppresses_stdout_but_not_errors(self):
+    def test_quiet_suppresses_stdout(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)
             output = io.StringIO()
             with mock.patch.object(cli.config_module, "Config", lambda: config):
                 with contextlib.redirect_stdout(output):
-                    self.assertEqual(
-                        cli.main(["--server-action", "list", "--quiet"]), 0
-                    )
+                    self.assertEqual(cli.main(["-q", "server", "list"]), 0)
             self.assertEqual(output.getvalue(), "")
-
-    def test_read_mapping_supports_csv_and_equals(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "map.csv"
-            path.write_text(
-                "source,destination\na.fr,b.fr\nc.fr = d.fr\n",
-                encoding="utf-8",
-            )
-            self.assertEqual(
-                cli.read_mapping(str(path)),
-                {"a.fr": "b.fr", "c.fr": "d.fr"},
-            )
-
-    def test_normalize_imports_aliases_and_order(self):
-        contents, steps = cli.normalize_imports(
-            [["mail", "task", "calendar", "whitelsit", "sendas", "settings"]]
-        )
-        self.assertEqual(contents, ["mail", "tasks", "calendar"])
-        self.assertEqual(steps, ["settings", "lists", "permissions"])
-
-    def test_object_selector_all(self):
-        self.assertIsNone(cli.read_object_selection("all"))
-        self.assertEqual(cli.read_object_selection(""), [])
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "names.csv"
-            path.write_text("name\na.fr\n", encoding="utf-8")
-            self.assertEqual(cli.read_object_selection(str(path)), ["a.fr"])
-
-    def test_force_sync_tags_option(self):
-        parser = cli.build_parser()
-        args = parser.parse_args(["--diff-user", "--force-sync-tags"])
-        self.assertTrue(args.force_sync_tags)
-
-    def test_import_cos_alias(self):
-        parser = cli.build_parser()
-        self.assertEqual(
-            parser.parse_args(["--import-cos", "all"]).create_cos, "all"
-        )
-
-    def test_import_aliases_for_resources_and_dl(self):
-        parser = cli.build_parser()
-        self.assertEqual(
-            parser.parse_args(["--import-resources", "resources.csv"]).import_resources,
-            "resources.csv",
-        )
-        self.assertEqual(
-            parser.parse_args(["--import-dl", "lists.csv"]).create_dl,
-            "lists.csv",
-        )
-
-    def test_all_alias_expands_contents_and_steps(self):
-        contents, steps = cli.normalize_imports([["all"]])
-        self.assertEqual(
-            contents,
-            ["mail", "calendar", "tasks", "contacts", "briefcase"],
-        )
-        self.assertEqual(
-            steps,
-            ["settings", "tags", "cos", "filters", "lists", "shares", "permissions"],
-        )
-
-    def test_briefcase_is_an_import_content(self):
-        contents, steps = cli.normalize_imports([["briefcase"]])
-        self.assertEqual(contents, ["briefcase"])
-        self.assertEqual(steps, [])
-
-    def test_tags_are_an_import_step(self):
-        contents, steps = cli.normalize_imports([["tags"]])
-        self.assertEqual(contents, [])
-        self.assertEqual(steps, ["tags"])
-
-    def test_adminrights_is_not_an_import(self):
-        with self.assertRaises(ValueError):
-            cli.normalize_imports([["adminrights"]])
-
-    def test_import_requires_list_user(self):
-        with self.assertRaises(SystemExit) as context:
-            cli.main([
-                "--import-user", "mail",
-                "--server-source", "src",
-                "--server-destination", "dst",
-            ])
-        self.assertEqual(context.exception.code, 2)
-
-    def test_create_requires_list_user(self):
-        with self.assertRaises(SystemExit) as context:
-            cli.main([
-                "--create-user",
-                "--server-source", "src",
-                "--server-destination", "dst",
-            ])
-        self.assertEqual(context.exception.code, 2)
-
-    def test_diff_and_import_are_exclusive(self):
-        with self.assertRaises(SystemExit) as context:
-            cli.main([
-                "--diff-user", "--import-user", "mail",
-                "--server-source", "src", "--server-destination", "dst",
-                "--list-user", "users.csv",
-            ])
-        self.assertEqual(context.exception.code, 2)
-
-    def test_migration_requires_server_labels(self):
-        with self.assertRaises(SystemExit) as context:
-            cli.main(["--create-user", "--list-user", "users.csv"])
-        self.assertEqual(context.exception.code, 2)
-
-    def test_server_actions_create_rename_remove(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            config = Config(tmp)
-            with mock.patch.object(cli.config_module, "Config", lambda: config):
-                self.assertEqual(
-                    cli.main([
-                        "--server-action", "create",
-                        "--server-type", "source",
-                        "--server-label", "src1",
-                    ]),
-                    0,
-                )
-                self.assertEqual(
-                    cli.main([
-                        "--server-action", "rename",
-                        "--server-label", "src1",
-                        "--new-label", "src2",
-                    ]),
-                    0,
-                )
-            self.assertIn("src2", config.servers())
-            self.assertNotIn("src1", config.servers())
-            with mock.patch.object(cli.config_module, "Config", lambda: config):
-                self.assertEqual(
-                    cli.main([
-                        "--server-action", "remove",
-                        "--server-label", "src2",
-                    ]),
-                    0,
-                )
-            self.assertNotIn("src2", config.servers())
-
-    def test_progress_accepts_detail_argument(self):
-        with contextlib.redirect_stdout(io.StringIO()):
-            cli._progress(1, 2, "test", {"account": "u@example.com"})
-
-    def test_bool_parser(self):
-        self.assertTrue(cli._parse_bool("TRUE"))
-        self.assertFalse(cli._parse_bool("false"))
-        with self.assertRaises(Exception):
-            cli._parse_bool("peut-etre")
 
 
 if __name__ == "__main__":

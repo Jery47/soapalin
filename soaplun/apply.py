@@ -350,6 +350,22 @@ HANDLERS: Dict[str, Callable[[ZimbraSession, Any, Dict[str, Any]], str]] = {
     "modify_resource": _modify_resource,
 }
 
+def action_type(kind: str) -> str:
+    if kind in {"create_resource", "modify_resource"}:
+        return "resource"
+    if kind in {"create_dl", "modify_dl", "add_dl_member"}:
+        return "dl"
+    if kind in {
+        "create_domain",
+        "create_domain_alias",
+        "modify_domain",
+        "create_cos",
+        "modify_cos",
+    }:
+        return "configuration"
+    return "account"
+
+
 BACKUP_KINDS = {
     "modify_account": "account",
     "set_password": "account",
@@ -558,6 +574,7 @@ def _apply_plan_inner(
         record: Dict[str, Any] = {
             "id": item.get("id"),
             "kind": kind,
+            "type": action_type(kind),
             "target": target,
             "description": item.get("description", ""),
             "started_at": now_iso(),

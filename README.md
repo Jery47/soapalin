@@ -4,20 +4,6 @@ Outil CLI de duplication et migration de serveurs Zimbra vers une destination.
 La source est toujours lue en lecture seule ; la destination est uniquement
 complétée, jamais vidée.
 
-## Fonctions
-
-- Connexions admin SOAP source et destination.
-- Inventaires JSON : domaines, COS, comptes, alias, listes, ressources.
-- Provisioning des domaines, COS, comptes, listes de distribution et ressources.
-- Copie des boîtes mail, agendas, contacts et tâches.
-- Copie additive des réglages, filtres, partages et droits.
-- Mots de passe fixes ou aléatoires.
-- Migration différentielle par date (`--since`).
-- Reprise ciblée des échecs (`--retry-failed`).
-- Rapports JSON et export CSV.
-
-Aucune suppression n'est effectuée sur la source ni sur la destination.
-
 ## Installation
 
 ### Linux / Zimbra
@@ -42,123 +28,145 @@ pip install -e .
 soapalin --help
 ```
 
-## Serveurs
+## Interface
 
-Les serveurs sont configurés dans `config/servers/<label>.json`.
-
-```bash
-soapalin --server-action create --server-type source --server-label src1
-soapalin --server-action create --server-type destination --server-label dst1
-soapalin --server-action list
+```text
+soapalin [options globales] <commande> [options]
 ```
 
-Éditer ensuite les fichiers `config/servers/src1.json` et
-`config/servers/dst1.json` : hôte STORE, port admin, hôte PROXY, port web,
-compte administrateur et mot de passe.
+Options globales, avant la sous-commande :
+
+```text
+-h, --help
+--version
+-q, --quiet
+-v, --verbose
+--debug
+--dry-run
+--foreground
+```
+
+Sous-commandes : `server`, `provision`, `migrate`, `job`.
+
+## Serveurs
 
 ```bash
-soapalin --server-action test --server-label src1
-soapalin --server-action inventory --server-label src1
-soapalin --server-action inventory --server-label dst1
-soapalin --server-action show --server-label src1
-soapalin --server-action rename --server-label src1 --new-label src2
-soapalin --server-action remove --server-label src2
+soapalin server add src1 --role source
+soapalin server add dst1 --role destination
+soapalin server list
+soapalin server show src1
+soapalin server test src1
+soapalin server inventory src1
+soapalin server rename src1 zimbra-prod
+soapalin server remove src1
+```
+
+Les serveurs sont stockés dans `config/servers/<label>.json`. Editer ensuite
+ces fichiers pour renseigner les hôtes, ports, comptes admin et mots de passe.
+
+## Provisioning
+
+```bash
+soapalin provision domain domains.csv --from src1 --to dst1
+soapalin provision cos all --from src1 --to dst1
+soapalin provision dl lists.csv --from src1 --to dst1
+soapalin provision resource resources.csv --from src1 --to dst1
+
+soapalin provision account users.csv --from src1 --to dst1 --password "Secret!"
+soapalin provision account users.csv --from src1 --to dst1 --password-file pwd.txt
+soapalin provision account users.csv --from src1 --to dst1 --random-password --keep-admin
+```
+
+`all` est accepté à la place du CSV. Les mappings disponibles :
+
+```text
+--mapping-domain CSV
+--mapping-host CSV
 ```
 
 ## Migration
 
 ```bash
-# Provisioning des objets globaux
-soapalin --create-domain domains.csv --server-source src1 --server-destination dst1
-soapalin --create-cos cos.csv --server-source src1 --server-destination dst1
-soapalin --import-cos all --server-source src1 --server-destination dst1
-soapalin --create-dl lists.csv --server-source src1 --server-destination dst1
-soapalin --create-resources resources.csv --server-source src1 --server-destination dst1
-
-# Tous les objets d'une catégorie
-soapalin --create-resources all --server-source src1 --server-destination dst1
-soapalin --create-dl all --server-source src1 --server-destination dst1
-
-# Comptes
-soapalin --create-user --password "Secret!" \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-
-soapalin --create-user --random-password \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-
-# Contenus et réglages
-soapalin --import-user all \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-
-# Briefcase uniquement
-soapalin --import-user briefcase \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-
-# Tags uniquement
-soapalin --import-user tags \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-
-# R?appliquer la COS source (m?me nom) sur les comptes
-soapalin --import-user cos \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-
-# Ressources : objets + agendas + mails
-soapalin --import-resources resources.csv \
-  --server-source src1 --server-destination dst1
-
-soapalin --import-resources all \
-  --server-source src1 --server-destination dst1
-
-# Rattrapage différentiel
-soapalin --import-user mail --since 2026-11-01 \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-
-# Reprise du dernier rapport en échec
-soapalin --import-user mail --retry-failed \
-  --server-source src1 --server-destination dst1
-
-# Rapport précis
-soapalin --import-user mail --retry-failed data/reports/mailboxes-20261107-100000.json \
-  --server-source src1 --server-destination dst1
+soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1
+soapalin migrate all --type account --from src1 --to dst1
+soapalin migrate resources.csv mail calendar --type resource --from src1 --to dst1
+soapalin migrate lists.csv members --type dl --from src1 --to dst1
+soapalin migrate all --type all --from src1 --to dst1
 ```
 
-`--dry-run` simule les opérations sans écrire sur la destination.
-`--random-password` écrit les mots de passe générés dans
-`data/reports/passwords-<date>.csv`.
-
-## Jobs en arriere-plan
-
-Les migrations, provisioning et inventaires sont lances en arriere-plan par
-defaut. La commande affiche l'identifiant du job et rend la main immediatement.
-
-```bash
-soapalin --jobs all --jobs-action list
-soapalin --jobs all --jobs-action status
-soapalin --jobs all --jobs-action live
-soapalin --jobs all --jobs-action stop
-soapalin --jobs 20261110-120305-29c057 --jobs-action status
-soapalin --jobs 20261110-120305-29c057 --jobs-action stop
-```
-
-Pour forcer l'execution au premier plan :
-
-```bash
-soapalin --foreground --import-user mail \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-```
-
-## Options utiles
+Éléments valides :
 
 ```text
--q, --quiet
--v, --verbose
---debug
---dry-run
---keep-tgz true|false
---keep-tgz-days N
+account  : mail calendar contacts tasks settings tags filter banlist
+           whitelist share sendas sendonbehalfof
+resource : mail calendar
+dl       : members
+```
+
+`--type all` exige le CSV `all`. Les tags manquants sont resynchronisés en mode
+différentiel.
+
+### Différentiel
+
+```bash
+soapalin migrate users.csv mail calendar settings --type account \
+  --from src1 --to dst1 --differential
+
+soapalin migrate users.csv mail calendar settings --type account \
+  --from src1 --to dst1 --differential=2026-10-01
+```
+
+La date filtre les arrivées pour les mails et les modifications pour les
+contacts, agendas et tâches.
+
+### Reprise des échecs
+
+```bash
+soapalin migrate users.csv mail --type account --retry-failed \
+  --from src1 --to dst1
+```
+
+## Simulation
+
+L'option globale `--dry-run` se place avant la sous-commande :
+
+```bash
+soapalin --dry-run migrate users.csv all --type account --from src1 --to dst1
+```
+
+`--json` n'est autorisé qu'avec `--dry-run`.
+
+## Jobs
+
+Les migrations, provisioning et inventaires sont lancés en arrière-plan par
+défaut. La commande rend immédiatement la main et affiche l'identifiant du job.
+
+```bash
+soapalin job list
+soapalin job status 20261110-120305-29c057
+soapalin job live
+soapalin job stop all
+```
+
+Pour exécuter au premier plan :
+
+```bash
+soapalin --foreground migrate users.csv mail --type account --from src1 --to dst1
+```
+
+Les états et journaux sont dans `data/jobs/<id>/`.
+
+## Options de migration
+
+```text
+--differential [YYYY-MM-DD]
+--retry-failed [RAPPORT]
 --parallelism N
+--keep-tgz [true|false]
+--keep-tgz-days N
 --mapping-domain CSV
 --mapping-host CSV
+--json
 ```
 
 ## Données
@@ -169,7 +177,7 @@ config/servers/          serveurs source/destination
 data/snapshots/          inventaires
 data/mailboxes/          archives TGZ temporaires
 data/reports/            rapports JSON, CSV et sauvegardes
-data/jobs/               état des tâches
+data/jobs/               états et journaux des jobs
 ```
 
 ## Tests

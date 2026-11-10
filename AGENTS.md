@@ -1,7 +1,7 @@
 # AGENTS.md - Instructions de developpement pour OpenCode
 
 Ce document fournit le contexte, l'architecture, les commandes et les regles de
-contribution indispensables pour travailler sur **Soap a l'un** (`soapalin`).
+contribution pour travailler sur **Soap a l'un** (`soapalin`).
 
 ---
 
@@ -18,8 +18,7 @@ serveurs Zimbra vers une destination.
    `resolve=skip` est toujours applique aux archives de boites.
 3. **Multi-serveurs decouple** : chaque serveur a son fichier
    `config/servers/<label>.json`.
-4. **Compatibilite Python** : Python 3.6+ (3.8+ recommande). Conserver les
-   imports `typing` (`List`, `Dict`, `Optional`, `Union`) si necessaire.
+4. **Compatibilite Python** : Python 3.6+ (3.8+ recommande).
 
 ---
 
@@ -36,17 +35,17 @@ python -m unittest discover -s tests
 
 ```bash
 python soapalin.py --help
-soapalin --server-action list
-soapalin --server-action create --server-type source --server-label src1
-soapalin --server-action test --server-label src1
-soapalin --server-action inventory --server-label src1
-soapalin --create-user --password "Secret!" \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-soapalin --import-user all \
-  --server-source src1 --server-destination dst1 --list-user users.csv
-soapalin --diff-user \
-  --server-source src1 --server-destination dst1 --list-user users.csv
+soapalin server list
+soapalin server add src1 --role source
+soapalin server test src1
+soapalin server inventory src1
+soapalin provision account users.csv --from src1 --to dst1 --password "Secret!"
+soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1
+soapalin job list
 ```
+
+Les options globales (`--dry-run`, `--foreground`, `-q`, `-v`, `--debug`)
+doivent etre placees avant la sous-commande.
 
 ---
 
@@ -62,14 +61,19 @@ Soap_a_lun/
   install.sh / uninstall.sh   installation Linux
   install.ps1 / uninstall.ps1 installation Windows
   soaplun/
-    cli.py                    CLI principal
+    cli.py                    parser global, validation, dispatch
+    commands/
+      server.py               sous-commandes serveur
+      provision.py            sous-commandes provisioning
+      migrate.py              migration et differentiel
+      job.py                  gestion des jobs
     config.py                 configuration, serveurs, secrets
     connections.py            sessions SOAP, garde lecture seule
     diff.py                   calcul de migration en memoire
     apply.py                  provisioning destination
     mailbox.py                export/import boites (zmmailbox ou REST)
     inventory.py              inventaires JSON
-    jobs.py                   jobs CLI en arriere-plan (etat, logs, stop)
+    jobs.py                   jobs en arriere-plan (etat, logs, stop)
     rest.py                   client REST stdlib
     settings.py               reglages, filtres, partages, droits
   vendor/                     bibliotheques Zimbra embarquees

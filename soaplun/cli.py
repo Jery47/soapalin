@@ -24,49 +24,12 @@ from .connections import ZimbraSession, describe_error
 
 _QUIET = False
 _JOB_STOP_EVENT = None
+_LAST_REPORTS = []
 
 
 def _out(*args, **kwargs):
     if kwargs.get("file") is sys.stderr or not _QUIET:
         print(*args, **kwargs)
-
-
-CONTENT_ALIASES = {
-    "mail": "mail",
-    "calendar": "calendar",
-    "task": "tasks",
-    "tasks": "tasks",
-    "contacts": "contacts",
-    "briefcase": "briefcase",
-}
-
-STEP_ALIASES = {
-    "settings": "settings",
-    "tag": "tags",
-    "tags": "tags",
-    "cos": "cos",
-    "filter": "filters",
-    "filters": "filters",
-    "banlist": "lists",
-    "blacklist": "lists",
-    "whitelist": "lists",
-    "whitelsit": "lists",
-    "share": "shares",
-    "shares": "shares",
-    "sendas": "permissions",
-    "sendonbehalfof": "permissions",
-}
-
-IMPORT_STEP_ORDER = (
-    "mailbox",
-    "settings",
-    "tags",
-    "cos",
-    "filters",
-    "lists",
-    "shares",
-    "permissions",
-)
 
 
 def _parse_bool(value: Any) -> bool:
@@ -80,242 +43,167 @@ def _parse_bool(value: Any) -> bool:
     raise argparse.ArgumentTypeError("valeur booleenne attendue (true/false)")
 
 
+ACCOUNT_ELEMENTS = (
+    "mail",
+    "calendar",
+    "contacts",
+    "tasks",
+    "settings",
+    "tags",
+    "filter",
+    "banlist",
+    "whitelist",
+    "share",
+    "sendas",
+    "sendonbehalfof",
+)
+RESOURCE_ELEMENTS = ("mail", "calendar")
+DL_ELEMENTS = ("members",)
+ELEMENT_ALIASES = {
+    "task": "tasks",
+    "filters": "filter",
+    "shares": "share",
+    "sendas": "sendas",
+    "sendonbehalfof": "sendonbehalfof",
+}
+
+
+def iso_date(value: str):
+    import datetime
+
+    try:
+        return datetime.datetime.strptime(str(value), "%Y-%m-%d").date()
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError(
+            "date invalide %r : utilisez YYYY-MM-DD" % value
+        ) from exc
+
+
+def _elements_for_type(kind: str):
+    if kind == "account":
+        return list(ACCOUNT_ELEMENTS)
+    if kind == "resource":
+        return list(RESOURCE_ELEMENTS)
+    if kind == "dl":
+        return list(DL_ELEMENTS)
+    return list(ACCOUNT_ELEMENTS + RESOURCE_ELEMENTS + DL_ELEMENTS)
+
+
+def normalize_migrate_elements(kind: str, values):
+    values = list(values or ["all"])
+    if "all" in values:
+        if len(values) != 1:
+            raise ValueError("'all' doit etre utilise seul.")
+        return _elements_for_type(kind)
+    valid = set(ACCOUNT_ELEMENTS + RESOURCE_ELEMENTS + DL_ELEMENTS)
+    applicable = set(_elements_for_type(kind))
+    normalized = []
+    ignored = []
+    for raw in values:
+        value = str(raw or "").strip().lower()
+        if not value:
+            continue
+        value = ELEMENT_ALIASES.get(value, value)
+        if value not in valid:
+            raise ValueError("element inconnu : %s" % raw)
+        if value not in applicable:
+            ignored.append(value)
+            continue
+        if value not in normalized:
+            normalized.append(value)
+    for value in ignored:
+        _out(
+            "AVERTISSEMENT : element %s inapplicable au type %s, ignore."
+            % (value, kind),
+            file=sys.stderr,
+        )
+    if not normalized:
+        raise ValueError(
+            "aucun element applicable au type %s dans la selection." % kind
+        )
+    return normalized
+
+
+def _add_global_options(parser):
+    parser.add_argument("--version", action="version", version=__version__)
+    parser.add_argument("-q", "--quiet", action="store_true")
+    parser.add_argument("-v", "--verbose", action="count", default=0)
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--foreground", action="store_true")
+    parser.add_argument("--job-worker", default="", help=argparse.SUPPRESS)
+
+
+def _add_connection_options(parser):
+    parser.add_argument("--from", dest="from_label", required=True, metavar="LABEL")
+    parser.add_argument("--to", dest="to_label", required=True, metavar="LABEL")
+    parser.add_argument("--mapping-domain", default="", metavar="CSV")
+    parser.add_argument("--mapping-host", default="", metavar="CSV")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="soapalin",
-        description="Migration Zimbra - interface CLI.",
+        description="Migration Zimbra en sous-commandes.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Exemples:\n"
-            "  soapalin --server-action create --server-type source "
-            "--server-label src1\n"
-            "  soapalin --server-action test --server-label src1\n"
-            "  soapalin --server-action inventory --server-label src1\n"
-            "  soapalin --create-domain domains.csv --server-source src1 "
-            "--server-destination dst1\n"
-            "  soapalin --create-cos cos.csv --server-source src1 "
-            "--server-destination dst1\n"
-            "  soapalin --import-cos all --server-source src1 "
-            "--server-destination dst1\n"
-            "  soapalin --create-dl lists.csv --server-source src1 "
-            "--server-destination dst1\n"
-            "  soapalin --create-resources resources.csv --server-source src1 "
-            "--server-destination dst1\n"
-            "  soapalin --import-resources resources.csv --server-source src1 "
-            "--server-destination dst1\n"
-            "  soapalin --import-dl lists.csv --server-source src1 "
-            "--server-destination dst1\n"
-            "  soapalin --create-user --password Secret! --server-source src1 "
-            "--server-destination dst1 --list-user users.csv\n"
-            "  soapalin --create-user --random-password --server-source src1 "
-            "--server-destination dst1 --list-user users.csv\n"
-            "  soapalin --import-user mail calendar settings --since 2026-11-01 "
-            "--server-source src1 --server-destination dst1 "
-            "--list-user users.csv\n"
-            "  soapalin --import-user mail --retry-failed --server-source src1 "
-            "--server-destination dst1\n"
-            "  soapalin --diff-user --server-source src1 "
-            "--server-destination dst1 --list-user users.csv\n"
-            "  soapalin --diff-user --force-sync-tags --server-source src1 "
-            "--server-destination dst1 --list-user users.csv\n"            "  soapalin --jobs all --jobs-action list\n"
-            "  soapalin --jobs all --jobs-action status\n"
-            "  soapalin --jobs all --jobs-action live\n"
-            "  soapalin --jobs all --jobs-action stop\n"
+            "  soapalin server list\n"
+            "  soapalin provision account users.csv --from src1 --to dst1 --password Secret!\n"
+            "  soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1\n"
+            "  soapalin --dry-run migrate users.csv all --type account --from src1 --to dst1\n"
+            "  soapalin job list\n"
+        ),
+    )
+    _add_global_options(parser)
+    sub = parser.add_subparsers(dest="command", metavar="{server,provision,migrate,job}")
 
-        ),
-    )
-    parser.add_argument("--version", action="version", version=__version__)
-    parser.add_argument(
-        "--jobs",
-        default="",
-        metavar="ID|all",
-        help="selectionner un job ou tous les jobs",
-    )
-    parser.add_argument(
-        "--jobs-action",
-        choices=("list", "status", "stop", "live"),
-        help="action sur les jobs en arriere-plan",
-    )
-    parser.add_argument(
-        "--foreground",
-        action="store_true",
-        help="executer la commande au premier plan",
-    )
-    parser.add_argument(
-        "--job-worker",
-        default="",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--server-action",
-        choices=("create", "test", "remove", "list", "show", "rename", "inventory"),
-        help="gerer ou utiliser un serveur configure",
-    )
-    parser.add_argument(
-        "--server-type",
-        choices=("source", "destination"),
-        help="type de serveur pour --server-action create",
-    )
-    parser.add_argument(
-        "--server-label",
-        "--label",
-        dest="server_label",
-        default="",
-        help="label du serveur",
-    )
-    parser.add_argument("--new-label", default="", help="nouveau label pour rename")
-    parser.add_argument(
-        "--server-source", default="", help="label du serveur source"
-    )
-    parser.add_argument(
-        "--server-destination", default="", help="label du serveur destination"
-    )
-    parser.add_argument(
-        "--create-user",
-        action="store_true",
-        help="executer le provisioning des comptes",
-    )
-    parser.add_argument(
-        "--create-domain",
-        metavar="CSV",
-        default="",
-        help="creer/mettre a jour les domaines d'un CSV, ou all",
-    )
-    parser.add_argument(
-        "--create-cos",
-        "--import-cos",
-        dest="create_cos",
-        metavar="CSV",
-        default="",
-        help="creer/mettre a jour les COS d'un CSV, ou all",
-    )
-    parser.add_argument(
-        "--create-dl",
-        "--import-dl",
-        "--import-distribution-lists",
-        dest="create_dl",
-        metavar="CSV",
-        default="",
-        help="creer/mettre a jour les listes de distribution d'un CSV, ou all",
-    )
-    parser.add_argument(
-        "--create-resources",
-        "--create-resource",
-        dest="create_resources",
-        metavar="CSV",
-        default="",
-        help="creer/mettre a jour les ressources d'un CSV, ou all",
-    )
-    parser.add_argument(
-        "--import-resources",
-        "--import-resource",
-        dest="import_resources",
-        metavar="CSV",
-        default="",
-        help="creer les ressources d'un CSV ou all, puis importer agendas et mails",
-    )
-    parser.add_argument(
-        "--import-user",
-        dest="imports",
-        action="append",
-        nargs="+",
-        metavar="ELEMENT",
-        help=(
-            "importer des elements : mail, calendar, tasks, contacts, "
-            "settings, tags, cos, filter, banlist, whitelist, share, sendas, "
-            "sendonbehalfof, all"
-        ),
-    )
-    parser.add_argument(
-        "--diff-user",
-        action="store_true",
-        help="importer uniquement les differences",
-    )
-    parser.add_argument(
-        "--list-user",
-        default="",
-        help="CSV des comptes a traiter (obligatoire pour les migrations)",
-    )
-    parser.add_argument("--mapping-domain", default="", help="CSV source,destination")
-    parser.add_argument("--mapping-host", default="", help="CSV source,destination")
-    parser.add_argument(
-        "--adminrights",
-        action="store_true",
-        help="conserver les permissions admin (avec --create-user)",
-    )
-    parser.add_argument(
-        "--password",
-        default="",
-        help="mot de passe fixe pour les comptes crees",
-    )
-    parser.add_argument(
-        "--random-password",
-        action="store_true",
-        help="generer un mot de passe aleatoire par compte et exporter un CSV",
-    )
-    parser.add_argument(
-        "--keep-tgz",
-        nargs="?",
-        const=True,
-        default=False,
-        type=_parse_bool,
-        help="garder les archives TGZ (true/false)",
-    )
-    parser.add_argument(
-        "--keep-tgz-days",
-        type=int,
-        default=0,
-        help="jours de conservation des archives (0 = infini)",
-    )
-    parser.add_argument(
-        "--parallelism",
-        type=int,
-        default=1,
-        help="nombre de comptes traites en parallele",
-    )
-    parser.add_argument(
-        "--since",
-        default="",
-        metavar="YYYY-MM-DD",
-        help="ne copier que les elements arrives depuis cette date (mail)",
-    )
-    parser.add_argument(
-        "--retry-failed",
-        nargs="?",
-        const="",
-        default=None,
-        metavar="RAPPORT",
-        help="relancer les comptes en echec du dernier rapport ou du rapport indique",
-    )
-    parser.add_argument(
-        "--force-sync-tags",
-        action="store_true",
-        help="avec --diff-user, reappliquer les tags manquants aux elements existants",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="simuler sans ecrire sur la destination",
-    )
-    parser.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="reduire la sortie standard (les erreurs restent affichees)",
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=0,
-        help="activer les traces SOAP/REST detaillees (repetable)",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="activer le logging de debogage",
-    )
+    from .commands import job as job_cmd
+    from .commands import migrate as migrate_cmd
+    from .commands import provision as provision_cmd
+    from .commands import server as server_cmd
+
+    server_cmd.add_parser(sub)
+    provision_cmd.add_parser(sub)
+    migrate_cmd.add_parser(sub)
+    job_cmd.add_parser(sub)
     return parser
+
+
+def validate(args, parser) -> None:
+    if not args.command:
+        parser.error("une sous-commande est obligatoire.")
+    if args.command in ("provision", "migrate"):
+        if not args.from_label or not args.to_label:
+            parser.error("--from et --to sont obligatoires.")
+        if getattr(args, "json", False) and not args.dry_run:
+            parser.error("--json est uniquement autorise avec --dry-run.")
+    if args.command == "provision":
+        if not getattr(args, "provision_command", ""):
+            parser.error("une sous-commande provision est obligatoire.")
+        if args.provision_command == "account":
+            if not (
+                args.password
+                or args.password_file
+                or args.random_password
+            ):
+                parser.error(
+                    "--password, --password-file ou --random-password est obligatoire."
+                )
+    if args.command == "migrate":
+        if not args.type:
+            parser.error("--type est obligatoire.")
+        if args.type == "all" and str(args.csv).strip().lower() != "all":
+            parser.error("--type all exige le CSV 'all'.")
+        try:
+            args.elements = normalize_migrate_elements(args.type, args.elements)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if getattr(args, "retry_failed", None) is not None and not args.csv:
+            parser.error("--retry-failed exige un CSV ou 'all'.")
+    if args.command == "job":
+        if not getattr(args, "job_command", ""):
+            parser.error("une sous-commande job est obligatoire.")
 
 
 def _read_rows(path: str) -> List[List[str]]:
@@ -443,49 +331,6 @@ def read_object_selection(value: str):
     return read_object_names(text)
 
 
-def normalize_imports(values: Optional[List[List[str]]]) -> Tuple[List[str], List[str]]:
-    contents: List[str] = []
-    steps: List[str] = []
-    for group in values or []:
-        for raw in group:
-            token = str(raw or "").strip().lower()
-            if not token:
-                continue
-            if token == "all":
-                for content in ("mail", "calendar", "tasks", "contacts", "briefcase"):
-                    if content not in contents:
-                        contents.append(content)
-                for step in (
-                    "settings",
-                    "tags",
-                    "cos",
-                    "filters",
-                    "lists",
-                    "shares",
-                    "permissions",
-                ):
-                    if step not in steps:
-                        steps.append(step)
-                continue
-            if token in CONTENT_ALIASES:
-                content = CONTENT_ALIASES[token]
-                if content not in contents:
-                    contents.append(content)
-                continue
-            if token in STEP_ALIASES:
-                step = STEP_ALIASES[token]
-                if step not in steps:
-                    steps.append(step)
-                continue
-            if token == "adminrights":
-                raise ValueError(
-                    "adminrights appartient a --create-user, pas a --import-user"
-                )
-            raise ValueError("valeur --import-user inconnue : %s" % raw)
-    steps.sort(key=IMPORT_STEP_ORDER.index)
-    return contents, steps
-
-
 def _base_options(config: config_module.Config, args) -> Dict[str, Any]:
     overrides: Dict[str, Any] = {
         "parallelism": max(1, int(args.parallelism or 1)),
@@ -595,6 +440,7 @@ def _progress(done: int, total: int, message: str, detail=None) -> None:
 
 
 def _print_summary(title: str, report: Dict[str, Any]) -> int:
+    _LAST_REPORTS.append({"title": title, "report": report})
     summary = report.get("summary") or {}
     if summary.get("planned"):
         _out(
@@ -720,7 +566,7 @@ def _run_import(
         if content in mailbox_module.TAG_CONTENT_SPECS
     ]
     tags_ready = False
-    if "tags" in steps or tag_contents:
+    if ("tags" in steps or tag_contents) and not args.dry_run:
         report = settings_module.copy_account_settings(
             config,
             plan,
@@ -732,6 +578,9 @@ def _run_import(
             parts=["tags"],
         )
         failures += _print_summary("Tags", report)
+        tags_ready = True
+    elif "tags" in steps or tag_contents:
+        _out("Simulation des definitions de tags.")
         tags_ready = True
     if "cos" in steps:
         report = settings_module.copy_account_settings(
@@ -983,7 +832,9 @@ def _run_objects(config, args, options, cancel=None) -> int:
     return failures
 
 
-def _retry_users(config, report_path: str = "") -> List[str]:
+def _retry_users(
+    config, report_path: str = "", migrate_type: Optional[str] = None
+) -> List[str]:
     directory = config.storage_path("report_path")
     if report_path:
         candidate = Path(report_path)
@@ -994,8 +845,9 @@ def _retry_users(config, report_path: str = "") -> List[str]:
         candidates = [candidate]
     else:
         candidates = sorted(
-            directory.glob("mailboxes-*.json"),
-            key=lambda item: item.name,
+            list(directory.glob("mailboxes-*.json"))
+            + list(directory.glob("apply-*.json")),
+            key=lambda item: item.stem,
             reverse=True,
         )
     for path in candidates:
@@ -1008,7 +860,10 @@ def _retry_users(config, report_path: str = "") -> List[str]:
         for item in report.get("items") or []:
             if item.get("status") != "failed":
                 continue
-            account = item.get("source") or item.get("destination")
+            item_type = str(item.get("type") or "account")
+            if migrate_type and migrate_type != "all" and item_type != migrate_type:
+                continue
+            account = item.get("source") or item.get("destination") or item.get("target")
             if account:
                 failed.append(str(account))
         if failed:
@@ -1224,23 +1079,6 @@ def _run_server_action(config, args, cancel=None) -> int:
     raise RuntimeError("Action serveur inconnue : %s" % action)
 
 
-def _background_requested(args) -> bool:
-    object_actions = bool(
-        args.create_domain
-        or args.create_cos
-        or args.create_dl
-        or args.create_resources
-        or getattr(args, "import_resources", "")
-    )
-    return bool(
-        args.create_user
-        or args.__dict__.get("imports")
-        or args.diff_user
-        or object_actions
-        or args.server_action == "inventory"
-    )
-
-
 def _launch_job(argv, args) -> int:
     config = config_module.Config()
     store = jobs_module.JobStore(config)
@@ -1258,63 +1096,6 @@ def _launch_job(argv, args) -> int:
     _out("Suivi   : soapalin --jobs %s --jobs-action live" % spec["id"])
     _out("Arret   : soapalin --jobs %s --jobs-action stop" % spec["id"])
     return 0
-
-
-def _job_line(state: Dict[str, Any]) -> str:
-    return "%-24s %-12s %-19s %s" % (
-        state.get("id", "?"),
-        state.get("status", "?"),
-        state.get("created_at", ""),
-        state.get("title", ""),
-    )
-
-
-def _run_jobs(config, selector: str, action: str) -> int:
-    store = jobs_module.JobStore(config)
-    try:
-        jobs = store.selected(selector or "all")
-    except KeyError as exc:
-        _out("ERREUR : %s" % exc, file=sys.stderr)
-        return 1
-    if action == "list":
-        if not jobs:
-            _out("Aucun job.")
-            return 0
-        _out("%-24s %-12s %-19s %s" % ("ID", "STATUT", "CREE", "COMMANDE"))
-        for state in jobs:
-            _out(_job_line(state))
-        return 0
-    if action == "status":
-        if not jobs:
-            _out("Aucun job.")
-            return 0
-        for state in jobs:
-            _out("Job     : %s" % state.get("id", ""))
-            _out("Statut  : %s" % state.get("status", ""))
-            _out("Commande: %s" % state.get("title", ""))
-            _out("PID     : %s" % state.get("pid", 0))
-            _out("Debut   : %s" % state.get("started_at", ""))
-            _out("Fin     : %s" % state.get("finished_at", ""))
-            _out("Journal : %s" % state.get("log_path", ""))
-            if state.get("error"):
-                _out("Erreur  : %s" % state.get("error"))
-            _out("")
-        return 0
-    if action == "stop":
-        stopped = 0
-        for state in jobs:
-            if state.get("status") in jobs_module.TERMINAL_STATUSES:
-                continue
-            store.request_stop(state["id"])
-            _out("Arret demande : %s" % state["id"])
-            stopped += 1
-        if not stopped:
-            _out("Aucun job actif.")
-        return 0
-    if action == "live":
-        return jobs_module.follow_jobs(store, jobs)
-    _out("Action jobs inconnue : %s" % action, file=sys.stderr)
-    return 2
 
 
 def _run_job_worker(spec_path: str) -> int:
@@ -1419,193 +1200,73 @@ def _write_interrupt_report(config, cleaned: List[str]) -> str:
         return ""
 
 
+def _should_background(args) -> bool:
+    if args.command in ("provision", "migrate"):
+        return True
+    if args.command == "server" and getattr(args, "server_command", "") == "inventory":
+        return True
+    return False
+
+
 def main(argv: Optional[Sequence[str]] = None, _from_job: bool = False) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.job_worker:
         return _run_job_worker(args.job_worker)
-    if args.jobs or args.jobs_action:
-        if not args.jobs_action:
-            parser.error("--jobs-action est obligatoire avec --jobs.")
-        try:
-            return _run_jobs(config_module.Config(), args.jobs or "all", args.jobs_action)
-        except Exception as exc:  # noqa: BLE001
-            _out("ERREUR : %s" % describe_error(exc), file=sys.stderr)
-            return 1
     global _QUIET
     _QUIET = bool(args.quiet)
     level = logging.DEBUG if (args.debug or args.verbose) else logging.WARNING
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("soapalin").debug("argument(s): %s", vars(args))
-    object_actions = bool(
-        args.create_domain
-        or args.create_cos
-        or args.create_dl
-        or args.create_resources
-        or args.import_resources
-    )
-    migration = [
-        bool(args.create_user),
-        bool(args.__dict__.get("imports")),
-        bool(args.diff_user),
-        object_actions,
-    ]
-    if args.server_action:
-        if any(migration):
-            parser.error("--server-action est exclusif avec les migrations.")
-        if (
-            args.server_action == "inventory"
-            and not _from_job
-            and not args.foreground
-        ):
-            return _launch_job(argv, args)
-        try:
-            config = config_module.Config()
-            return _run_server_action(
-                config, args, cancel=_JOB_STOP_EVENT or threading.Event()
-            )
-        except KeyboardInterrupt:
-            _out("Operation interrompue.", file=sys.stderr)
-            return 130
-        except Exception as exc:  # noqa: BLE001
-            _out("ERREUR : %s" % describe_error(exc), file=sys.stderr)
-            return 1
-    if not any(migration):
-        parser.print_help()
-        return 2
-    if args.diff_user and args.__dict__.get("imports"):
-        parser.error("--diff-user ne peut pas etre combine avec --import-user.")
-    if args.diff_user and args.create_user:
-        parser.error("--diff-user ne peut pas etre combine avec --create-user.")
-    account_actions = bool(
-        args.create_user or args.__dict__.get("imports") or args.diff_user
-    )
-    if account_actions and not args.list_user and args.retry_failed is None:
-        parser.error("--list-user est obligatoire pour les migrations.")
-    if not args.server_source or not args.server_destination:
-        parser.error(
-            "--server-source et --server-destination sont obligatoires."
-        )
-    if (args.mapping_domain or args.mapping_host) and not any(
-        (
-            args.create_user,
-            args.create_domain,
-            args.create_cos,
-            args.create_dl,
-            args.create_resources,
-            args.import_resources,
-        )
-    ):
-        parser.error(
-            "les mappings necessitent --create-user ou une option --create-*/--import-*."
-        )
-    if args.adminrights and not args.create_user:
-        parser.error("--adminrights est uniquement utilisable avec --create-user.")
-    if args.random_password and not args.create_user:
-        parser.error("--random-password est uniquement utilisable avec --create-user.")
-    if args.create_user and not (args.password or args.random_password):
-        parser.error(
-            "--password ou --random-password est obligatoire avec --create-user."
-        )
-    if args.password and args.random_password:
-        parser.error("--password et --random-password sont exclusifs.")
-    if args.force_sync_tags and not args.diff_user:
-        parser.error("--force-sync-tags est uniquement utilisable avec --diff-user.")
-    if args.since and not (args.__dict__.get("imports") or args.diff_user):
-        parser.error("--since est uniquement utilisable avec --import-user ou --diff-user.")
-    if args.since:
-        try:
-            mailbox_module.since_query(args.since)
-        except Exception as exc:  # noqa: BLE001
-            parser.error(str(exc))
-    if args.retry_failed is not None and not (
-        args.__dict__.get("imports") or args.diff_user
-    ):
-        parser.error("--retry-failed est uniquement utilisable avec --import-user ou --diff-user.")
-    if args.retry_failed is not None and args.list_user:
-        parser.error("--retry-failed ne peut pas etre combine avec --list-user.")
-    try:
-        contents, steps = normalize_imports(args.__dict__.get("imports"))
-    except ValueError as exc:
-        parser.error(str(exc))
+    validate(args, parser)
 
-    cancel = threading.Event()
-    config = None
-    if not _from_job and not args.foreground and _background_requested(args):
+    from .commands import job as job_cmd
+    from .commands import migrate as migrate_cmd
+    from .commands import provision as provision_cmd
+    from .commands import server as server_cmd
+
+    if not _from_job and not args.foreground and _should_background(args):
         return _launch_job(argv, args)
 
+    config = None
     try:
+        if args.command == "job":
+            return job_cmd.run(args)
+        if args.command == "server":
+            return server_cmd.run(args)
         config = config_module.Config()
-        config.use_servers(args.server_source, args.server_destination)
-        options = _base_options(config, args)
-        failures = 0
-        if object_actions:
-            failures += _run_objects(config, args, options, cancel=cancel)
-            if failures:
-                return failures
-        if not account_actions:
-            return 0
-
-        users = (
-            _retry_users(config, args.retry_failed or "")
-            if args.retry_failed is not None
-            else read_users(args.list_user)
-        )
-        if not users:
-            raise RuntimeError("Aucun compte a traiter.")
-        if args.diff_user:
-            options["content_types"] = ["mail", "calendar", "contacts", "tasks"]
-            plan = _build_plan(
-                config,
-                users,
-                options,
-                args.server_source,
-                args.server_destination,
-            )
-            return _run_diff(
-                config,
-                plan,
-                options,
-                users,
-                args,
-                cancel=cancel,
-                force_sync_tags=args.force_sync_tags,
-            )
-        plan = _build_plan(
-            config,
-            users,
-            options,
-            args.server_source,
-            args.server_destination,
-        )
-        if args.create_user:
-            failures += _run_create(
-                config,
-                plan,
-                options,
-                users,
-                args.dry_run,
-                "" if args.create_domain else args.server_destination,
-                cancel=cancel,
-            )
-        if failures:
-            return failures
-        if args.__dict__.get("imports"):
-            return _run_import(
-                config, plan, options, users, contents, steps, args, cancel=cancel
-            )
-        return 0
+        if args.command == "provision":
+            return provision_cmd.run(args)
+        if args.command == "migrate":
+            _LAST_REPORTS.clear()
+            result = migrate_cmd.run(args)
+            if getattr(args, "json", False) and args.dry_run:
+                _out(
+                    json.dumps(
+                        {"dry_run": True, "reports": _LAST_REPORTS},
+                        ensure_ascii=False,
+                        indent=1,
+                        default=str,
+                    )
+                )
+            return result
+        parser.error("sous-commande inconnue.")
+        return 2
     except KeyboardInterrupt:
-        cancel.set()
-        cleaned: List[str] = []
+        cancel = _JOB_STOP_EVENT
+        if cancel is not None:
+            cancel.set()
+        cleaned = []
         if config is not None:
             try:
+                from . import mailbox as mailbox_module
+
                 cleaned = mailbox_module.cleanup_partial_archives(config)
-            except Exception:  # noqa: BLE001 - cleanup is best effort
+            except Exception:  # noqa: BLE001
                 cleaned = []
-            report_path = _write_interrupt_report(config, cleaned)
-            if report_path:
-                _out("Rapport d'interruption : %s" % report_path)
+            path = _write_interrupt_report(config, cleaned)
+            if path:
+                _out("Rapport d'interruption : %s" % path)
         _out(
             "INTERRUPTION : transfert arrete, %d archive(s) partielle(s) supprimee(s)."
             % len(cleaned),
