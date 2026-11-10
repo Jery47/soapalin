@@ -90,6 +90,18 @@ class CliHelperTests(unittest.TestCase):
                 "dst1",
             )
 
+    def test_run_create_accepts_parallelism(self):
+        with mock.patch.object(
+            cli, "apply_plan", return_value={"summary": {}}
+        ) as apply, mock.patch.object(
+            cli, "_print_summary", return_value=0
+        ):
+            result = cli._run_create(
+                mock.Mock(), {}, {}, [], True, parallelism=5
+            )
+        self.assertEqual(result, 0)
+        self.assertEqual(apply.call_args.kwargs["parallelism"], 5)
+
     def test_interrupt_report_is_written(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)

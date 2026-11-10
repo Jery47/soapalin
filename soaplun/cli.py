@@ -546,6 +546,7 @@ def _run_create(
     dry_run: bool,
     destination_label: str = "",
     cancel=None,
+    parallelism: int = 1,
 ) -> int:
     if destination_label:
         if dry_run:
