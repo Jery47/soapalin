@@ -269,12 +269,13 @@ DL_MEMBER_CHUNK = 100
 def _add_dl_members(
     session: ZimbraSession, name: str, members: List[str]
 ) -> None:
+    identifier = resolve_id(session, "dl", name)
     for index in range(0, len(members), DL_MEMBER_CHUNK):
         chunk = members[index : index + DL_MEMBER_CHUNK]
         session.request(
             "AddDistributionListMember",
             {
-                "dl": {"by": "name", "_content": name},
+                "id": identifier,
                 "dlm": [{"_content": member} for member in chunk],
             },
         )

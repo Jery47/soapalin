@@ -115,6 +115,7 @@ class ApplyHandlerTests(unittest.TestCase):
         self.config = Config(self.tmp.name)
         self.config.sync()["fixed_password"] = "Passw0rd!"
         self.session = FakeSession()
+        self.session.single["GetDistributionList"] = {"dl": {"id": "dl-1"}}
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -193,6 +194,7 @@ class ApplyHandlerTests(unittest.TestCase):
             },
         )
         content = self.session.call("AddDistributionListMember")
+        self.assertEqual(content["id"], "dl-1")
         self.assertEqual(
             content["dlm"],
             [{"_content": "a@dst.fr"}, {"_content": "b@dst.fr"}],
@@ -221,6 +223,7 @@ class ApplyHandlerTests(unittest.TestCase):
             {"name": "team@dst.fr", "members": ["c@dst.fr"]},
         )
         content = self.session.call("AddDistributionListMember")
+        self.assertEqual(content["id"], "dl-1")
         self.assertEqual(content["dlm"], [{"_content": "c@dst.fr"}])
 
     def test_cos_uses_zimbra_document_names(self):
