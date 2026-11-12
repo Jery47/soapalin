@@ -240,6 +240,18 @@ soapalin clean snapshots --keep-last 10
 demande pas de confirmation. Cibles : `mailboxes` (defaut), `jobs`, `reports`,
 `snapshots`, `trash`, `all`. Les jobs actifs et le repertoire de la migration en
 cours sont toujours conserves.
+## Nettoyage des partages destination
+
+Supprimer les mountpoints de partage d'un utilisateur, ou seulement ceux absents de la source :
+
+```bash
+soapalin clean users.csv share --type account --to dst1 --dry-run
+soapalin clean all share --type account --to dst1 --parallelism 10
+soapalin clean users.csv share --type account --from src1 --to dst1
+```
+
+Sans `--from`, tous les mountpoints de partage des comptes s?lectionn?s sont supprim?s. Avec `--from`, seuls les mountpoints absents de la source sont supprim?s.
+
 
 ## Données
 

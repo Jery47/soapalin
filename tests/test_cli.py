@@ -211,6 +211,25 @@ class NewCliParserTests(unittest.TestCase):
         ):
             self.assertIn(value, help_text)
 
+    def test_clean_share_command(self):
+        args = self.parsed(
+            [
+                "clean",
+                "users.csv",
+                "share",
+                "--type",
+                "account",
+                "--to",
+                "dst1",
+                "--parallelism",
+                "5",
+            ]
+        )
+        self.assertEqual(args.targets, ["users.csv", "share"])
+        self.assertEqual(args.type, "account")
+        self.assertEqual(args.to_label, "dst1")
+        self.assertEqual(args.parallelism, 5)
+
     def test_server_inventory_no_stats(self):
         args = self.parsed(
             ["server", "inventory", "src1", "--no-stats", "--parallelism", "4"]

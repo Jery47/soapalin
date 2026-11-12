@@ -47,6 +47,8 @@ soapalin migrate users.csv mail calendar settings --type account --from src1 --t
 soapalin job list
 soapalin clean --dry-run
 soapalin clean mailboxes --older-than 7
+soapalin clean all share --type account --to dst1 --dry-run
+soapalin clean users.csv share --type account --from src1 --to dst1
 ```
 
 Les options globales (`--dry-run`, `--foreground`, `--directly-clean`, `-q`,
