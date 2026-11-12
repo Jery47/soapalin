@@ -131,10 +131,10 @@ def build_parser() -> argparse.ArgumentParser:
             "  soapalin server inventory src1\n"
             "  soapalin server inventory src1 --no-stats\n"
             "  soapalin server inventory src1 --no-stats --parallelism 4\n"
-            "  soapalin provision domain domains.csv --from src1 --to dst1\n"
-            "  soapalin provision cos all --from src1 --to dst1\n"
-            "  soapalin provision account users.csv --from src1 --to dst1 --password Secret!\n"
-            "  soapalin provision account users.csv --from src1 --to dst1 --random-password --keep-admin\n"
+            "  soapalin provision domains.csv --type domain --from src1 --to dst1\n"
+            "  soapalin provision all --type cos --from src1 --to dst1\n"
+            "  soapalin provision users.csv --type account --from src1 --to dst1 --password Secret!\n"
+            "  soapalin provision users.csv --type account --from src1 --to dst1 --random-password --keep-admin\n"
             "  soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1\n"
             "  soapalin migrate users.csv cos --type account --from src1 --to dst1\n"
             "  soapalin migrate all --type account --from src1 --to dst1\n"
@@ -178,9 +178,9 @@ def validate(args, parser) -> None:
         if getattr(args, "json", False) and not args.dry_run:
             parser.error("--json est uniquement autorise avec --dry-run.")
     if args.command == "provision":
-        if not getattr(args, "provision_command", ""):
-            parser.error("une sous-commande provision est obligatoire.")
-        if args.provision_command == "account":
+        if not getattr(args, "type", ""):
+            parser.error("--type est obligatoire.")
+        if args.type == "account":
             if not (
                 args.password
                 or args.password_file

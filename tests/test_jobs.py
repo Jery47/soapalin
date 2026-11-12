@@ -16,7 +16,7 @@ class JobStoreTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_create_list_and_stop(self):
-        spec = self.store.create(["provision", "account", "users.csv"])
+        spec = self.store.create(["provision", "users.csv", "--type", "account"])
         self.assertTrue(spec["id"])
         states = self.store.list()
         self.assertEqual(len(states), 1)

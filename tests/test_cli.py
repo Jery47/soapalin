@@ -196,7 +196,7 @@ class NewCliParserTests(unittest.TestCase):
         help_text = self.parser().format_help()
         for value in (
             "server add src1 --role source",
-            "provision domain domains.csv",
+            "provision domains.csv --type domain",
             "migrate all --type all",
             "migrate users.csv mail --type account --differential",
             "job stop all",
@@ -229,8 +229,9 @@ class NewCliParserTests(unittest.TestCase):
         args = self.parsed(
             [
                 "provision",
-                "account",
                 "users.csv",
+                "--type",
+                "account",
                 "--from",
                 "src1",
                 "--to",
@@ -260,8 +261,9 @@ class NewCliParserTests(unittest.TestCase):
         provision = self.parsed(
             [
                 "provision",
-                "cos",
                 "all",
+                "--type",
+                "cos",
                 "--from",
                 "src1",
                 "--to",
@@ -272,8 +274,9 @@ class NewCliParserTests(unittest.TestCase):
         account = self.parsed(
             [
                 "provision",
-                "account",
                 "users.csv",
+                "--type",
+                "account",
                 "--from",
                 "src1",
                 "--to",
@@ -288,8 +291,9 @@ class NewCliParserTests(unittest.TestCase):
         args = self.parsed(
             [
                 "provision",
-                "domain",
                 "domains.csv",
+                "--type",
+                "domain",
                 "--from",
                 "src1",
                 "--to",

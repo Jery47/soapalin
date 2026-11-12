@@ -90,14 +90,14 @@ ces fichiers pour renseigner les hôtes, ports, comptes admin et mots de passe.
 ## Provisioning
 
 ```bash
-soapalin provision domain domains.csv --from src1 --to dst1
-soapalin provision cos all --from src1 --to dst1
+soapalin provision domains.csv --type domain --from src1 --to dst1
+soapalin provision all --type cos --from src1 --to dst1
 soapalin provision dl lists.csv --from src1 --to dst1
 soapalin provision resource resources.csv --from src1 --to dst1
 
-soapalin provision account users.csv --from src1 --to dst1 --password "Secret!"
-soapalin provision account users.csv --from src1 --to dst1 --password-file pwd.txt
-soapalin provision account users.csv --from src1 --to dst1 --random-password --keep-admin
+soapalin provision users.csv --type account --from src1 --to dst1 --password "Secret!"
+soapalin provision users.csv --type account --from src1 --to dst1 --password-file pwd.txt
+soapalin provision users.csv --type account --from src1 --to dst1 --random-password --keep-admin
 ```
 
 `all` est accepté à la place du CSV. Les mappings disponibles :
@@ -137,7 +137,7 @@ L'?l?ment `cos` applique uniquement la COS source aux comptes d?j? existants.
 Il faut d'abord cr?er les COS, puis rafra?chir l'inventaire destination :
 
 ```bash
-soapalin --foreground provision cos all --from src1 --to dst1
+soapalin --foreground provision all --type cos --from src1 --to dst1
 soapalin --foreground server inventory dst1 --no-stats
 soapalin --foreground migrate users.csv cos --type account --from src1 --to dst1
 ```
