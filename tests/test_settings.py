@@ -241,8 +241,48 @@ class IncomingShareTests(unittest.TestCase):
         payload = call[0][1]
         self.assertEqual(payload["rid"], "folder-id")
         self.assertEqual(payload["zid"], "owner-id")
+        self.assertEqual(payload["name"], "Calendar")
         self.assertEqual(payload["view"], "appointment")
         self.assertEqual(payload["perm"], "r")
+
+    def test_direct_user_share_wins_over_public_duplicate(self):
+        destination = self.Destination()
+        session = self.Session()
+        result = settings_module.copy_incoming_shares(
+            {
+                "mountpoints": [
+                    {
+                        "mid": "12",
+                        "ownerEmail": "owner@example.com",
+                        "folderPath": "/Calendar",
+                        "granteeType": "pub",
+                        "rights": "r",
+                        "view": "appointment",
+                    },
+                    {
+                        "mid": "12",
+                        "ownerEmail": "owner@example.com",
+                        "folderPath": "/Calendar",
+                        "granteeType": "usr",
+                        "granteeName": "user@example.com",
+                        "rights": "rwidx",
+                        "view": "appointment",
+                    },
+                ]
+            },
+            session,
+            destination,
+            "user@example.com",
+            dry_run=False,
+        )
+        self.assertEqual(result["created"], 1)
+        payload = [
+            item[1]
+            for item in destination.calls
+            if item[0] == "create_mountpoint"
+        ][0]
+        self.assertEqual(payload["perm"], "rwidx")
+        self.assertEqual(payload["name"], "Calendar")
 
     def test_unaccepted_incoming_share_is_skipped(self):
         destination = self.Destination()

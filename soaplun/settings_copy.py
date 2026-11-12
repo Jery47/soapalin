@@ -791,13 +791,7 @@ def copy_incoming_shares(
         for share in destination_shares
         if share.get("mid")
     }
-    owner_clients = {}
-
-    def owner_client(email):
-        if email not in owner_clients:
-            owner_clients[email] = destination_session.mail_client(email)
-        return owner_clients[email]
-
+    accepted = {}
     for share in source_shares:
         # ``mid`` is present for a share that is already mounted/accepted.
         if not share.get("mid"):
@@ -809,6 +803,28 @@ def copy_incoming_shares(
             result["skipped"] += 1
             continue
         key = (owner_email.lower(), folder_path)
+        grantee_type = str(share.get("granteeType") or "usr")
+        grantee = _map_email(effective, share.get("granteeName") or "")
+        priority = (
+            2
+            if grantee_type == "usr"
+            and grantee
+            and grantee.lower() == destination_email.lower()
+            else (1 if grantee_type == "grp" else 0)
+        )
+        current = accepted.get(key)
+        if current is None or priority > current[0]:
+            accepted[key] = (priority, share)
+    owner_clients = {}
+
+    def owner_client(email):
+        if email not in owner_clients:
+            owner_clients[email] = destination_session.mail_client(email)
+        return owner_clients[email]
+
+    for key, (_, share) in accepted.items():
+        owner_email = _map_email(effective, share.get("ownerEmail") or "")
+        folder_path = str(share.get("folderPath") or "/")
         if key in existing:
             result["skipped"] += 1
             continue
@@ -827,8 +843,9 @@ def copy_incoming_shares(
             folder_id = str((folder or {}).get("id") or "1")
             name = str(
                 share.get("name")
-                or share.get("ownerName")
                 or folder_path.rstrip("/").rsplit("/", 1)[-1]
+                or share.get("ownerName")
+                or owner_email
             )
             if not name or name == "/":
                 name = owner_email
@@ -848,10 +865,15 @@ def copy_incoming_shares(
             existing.add(key)
             result["created"] += 1
         except Exception as exc:  # noqa: BLE001
-            result["errors"].append(
-                "partage entrant %s / %s : %s"
-                % (owner_email, folder_path, describe_error(exc))
-            )
+            text = describe_error(exc).lower()
+            if "already_exists" in text or "already exists" in text:
+                existing.add(key)
+                result["skipped"] += 1
+            else:
+                result["errors"].append(
+                    "partage entrant %s / %s : %s"
+                    % (owner_email, folder_path, describe_error(exc))
+                )
     return result
 
 
