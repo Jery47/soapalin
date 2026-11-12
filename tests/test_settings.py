@@ -555,6 +555,29 @@ class OutgoingShareTests(unittest.TestCase):
             ],
         )
 
+    def test_collects_grants_from_root_acl(self):
+        client = self.FolderClient()
+        original = client.request
+
+        def request(name, content=None):
+            payload = original(name, content)
+            if name == "GetFolder":
+                payload["folder"]["acl"] = {
+                    "grant": {
+                        "d": "eric.dhorne@sdis21.org",
+                        "gt": "usr",
+                        "perm": "r",
+                    }
+                }
+            return payload
+
+        client.request = request
+        shares = inventory_module.collect_outgoing_shares(
+            client, "claire.genty@sdis21.org"
+        )
+        self.assertEqual(shares[0]["folderPath"], "/")
+        self.assertEqual(shares[0]["rights"], "r")
+
     def test_missing_grantee_is_ignored(self):
         destination_mail = self.FolderClient()
         destination = self.DestinationClient()
