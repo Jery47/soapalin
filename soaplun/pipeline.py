@@ -307,41 +307,64 @@ def resource_mailboxes(config, args, elements):
 def run_resource(config, args, elements) -> int:
     from . import mailbox as mailbox_module
 
-    names, mailboxes, contents = resource_mailboxes(config, args, elements)
+    names, mailboxes, selected = resource_mailboxes(config, args, elements)
     if not mailboxes:
         raise RuntimeError("Aucune ressource a migrer.")
-    if args.dry_run:
-        record_simulation("resource", {"mailboxes": mailboxes}, contents)
-        cli._out(
-            "Simulation ressources : %d ressource(s), contenus=%s."
-            % (len(mailboxes), ", ".join(contents))
-        )
-        return 0
-    options = runtime(args)
-    plan = {"mailboxes": mailboxes, "options": vars(options)}
-    if args.differential is not None:
-        report = mailbox_module.copy_mailboxes_incremental(
+    contents = [
+        value for value in selected if value in ("mail", "calendar")
+    ]
+    share_requested = "share" in selected
+    run_options = runtime(args)
+    options = cli._base_options(config, run_options)
+    plan = {"mailboxes": mailboxes, "options": vars(run_options)}
+    failures = 0
+
+    if share_requested:
+        report = cli.settings_module.copy_account_settings(
             config,
             plan,
             progress=cli._progress,
             only=names,
-            keep_archives=bool(args.keep_tgz),
-            options=vars(options),
-            content_types=contents,
+            dry_run=args.dry_run,
+            options=options,
+            parallelism=args.parallelism,
             cancel=cli._CONTEXT.cancel,
+            parts=["shares"],
         )
-    else:
-        report = mailbox_module.copy_mailboxes_chunked(
-            config,
-            plan,
-            progress=cli._progress,
-            only=names,
-            keep_archives=bool(args.keep_tgz),
-            options=vars(options),
-            content_types=contents,
-            cancel=cli._CONTEXT.cancel,
-        )
-    return cli._print_summary("Ressources", report)
+        failures += cli._print_summary("Partages ressources", report)
+
+    if contents:
+        if args.dry_run:
+            cli._out(
+                "Simulation ressources : %d ressource(s), contenus=%s."
+                % (len(mailboxes), ", ".join(contents))
+            )
+        elif args.differential is not None:
+            report = mailbox_module.copy_mailboxes_incremental(
+                config,
+                plan,
+                progress=cli._progress,
+                only=names,
+                keep_archives=bool(args.keep_tgz),
+                options=vars(run_options),
+                content_types=contents,
+                cancel=cli._CONTEXT.cancel,
+            )
+            failures += cli._print_summary("Ressources", report)
+        else:
+            report = mailbox_module.copy_mailboxes_chunked(
+                config,
+                plan,
+                progress=cli._progress,
+                only=names,
+                keep_archives=bool(args.keep_tgz),
+                options=vars(run_options),
+                content_types=contents,
+                cancel=cli._CONTEXT.cancel,
+            )
+            failures += cli._print_summary("Ressources", report)
+
+    return 2 if failures else 0
 
 
 def run_dl(config, args, elements) -> int:

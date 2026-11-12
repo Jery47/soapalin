@@ -124,7 +124,7 @@ soapalin migrate all --type all --from src1 --to dst1
 ```text
 account  : mail calendar contacts tasks briefcase cos folder color settings
            tags filter banlist whitelist share sendas sendonbehalfof
-resource : mail calendar
+resource : mail calendar share
 dl       : members
 ```
 

@@ -24,7 +24,7 @@ ACCOUNT_ELEMENTS = (
     "sendas",
     "sendonbehalfof",
 )
-RESOURCE_ELEMENTS = ("mail", "calendar")
+RESOURCE_ELEMENTS = ("mail", "calendar", "share")
 DL_ELEMENTS = ("members",)
 ELEMENT_ALIASES = {
     "task": "tasks",

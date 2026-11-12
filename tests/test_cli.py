@@ -445,6 +445,22 @@ class NewCliParserTests(unittest.TestCase):
         )
         self.assertEqual(args.elements, ["mail", "calendar"])
 
+    def test_valid_migrate_resource_share(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "all",
+                "share",
+                "--type",
+                "resource",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.elements, ["share"])
+
     def test_valid_migrate_dl(self):
         args = self.parsed(
             [
