@@ -113,10 +113,10 @@ soapalin provision users.csv --type account --from src1 --to dst1 --random-passw
 
 ```bash
 soapalin migrate users.csv --type account --item mail,calendar,settings --from src1 --to dst1
-soapalin migrate all --type account --from src1 --to dst1
+soapalin migrate all --type account --item all --from src1 --to dst1
 soapalin migrate resources.csv --type resource --item mail,calendar --from src1 --to dst1
 soapalin migrate lists.csv --type dl --item members --from src1 --to dst1
-soapalin migrate all --type all --from src1 --to dst1
+soapalin migrate all --type all --item all --from src1 --to dst1
 ```
 
 Éléments valides :

@@ -744,6 +744,8 @@ class NewCliParserTests(unittest.TestCase):
         base = [
             "migrate",
             "users.csv",
+            "--item",
+            "all",
             "--type",
             "account",
             "--from",
@@ -801,6 +803,8 @@ class NewCliParserTests(unittest.TestCase):
                 "migrate",
                 "all",
                 "--type",
+                "all",
+                "--item",
                 "all",
                 "--from",
                 "src1",
