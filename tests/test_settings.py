@@ -777,6 +777,60 @@ class TagTests(unittest.TestCase):
         self.assertEqual(action[1]["action"]["id"], "12")
         self.assertEqual(action[1]["action"]["color"], "6")
 
+    def test_custom_rgb_tag_is_created(self):
+        class Destination:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, name, content=None):
+                self.calls.append((name, content or {}))
+                if name == "GetTag":
+                    return {}
+                return {}
+
+        destination = Destination()
+        result = settings_module.copy_tags(
+            {"tags": [{"name": "Nextcloud", "rgb": "#FFCC33"}]},
+            destination,
+            dry_run=False,
+        )
+        self.assertEqual(result["created"], 1)
+        payload = destination.calls[-1][1]["tag"]
+        self.assertEqual(payload["rgb"], "#FFCC33")
+        self.assertNotIn("color", payload)
+
+    def test_custom_rgb_tag_color_is_updated(self):
+        class Destination:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, name, content=None):
+                self.calls.append((name, content or {}))
+                if name == "GetTag":
+                    return {
+                        "tag": [
+                            {
+                                "id": "12",
+                                "name": "Nextcloud",
+                                "color": "",
+                                "rgb": "#FFFFFF",
+                            }
+                        ]
+                    }
+                return {}
+
+        destination = Destination()
+        result = settings_module.copy_tags(
+            {"tags": [{"name": "Nextcloud", "rgb": "#FFCC33"}]},
+            destination,
+            dry_run=False,
+        )
+        self.assertEqual(result["updated"], 1)
+        action = destination.calls[-1][1]["action"]
+        self.assertEqual(action["op"], "color")
+        self.assertEqual(action["rgb"], "#FFCC33")
+        self.assertNotIn("color", action)
+
     def test_tags_are_dry_run_safe(self):
         class Destination:
             def request(self, name, content=None):
