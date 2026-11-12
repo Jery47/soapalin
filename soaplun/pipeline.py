@@ -314,10 +314,25 @@ def run_resource(config, args, elements) -> int:
         value for value in selected if value in ("mail", "calendar")
     ]
     share_requested = "share" in selected
+    folder_requested = "folder" in selected
     run_options = runtime(args)
     options = cli._base_options(config, run_options)
     plan = {"mailboxes": mailboxes, "options": vars(run_options)}
     failures = 0
+
+    if folder_requested:
+        report = cli.settings_module.copy_account_settings(
+            config,
+            plan,
+            progress=cli._progress,
+            only=names,
+            dry_run=args.dry_run,
+            options=options,
+            parallelism=args.parallelism,
+            cancel=cli._CONTEXT.cancel,
+            parts=["folder"],
+        )
+        failures += cli._print_summary("Dossiers ressources", report)
 
     if share_requested:
         report = cli.settings_module.copy_account_settings(

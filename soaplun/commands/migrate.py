@@ -49,7 +49,7 @@ def add_parser(subparsers):
             "Le type definit l'objet migre :\n"
             "  account  : mail calendar contacts tasks briefcase cos folder color settings tags\n"
             "             filter banlist whitelist share sendas sendonbehalfof\n"
-            "  resource : mail calendar share\n"
+            "  resource : mail calendar folder share\n"
             "  dl       : members uniquement (une DL n'a ni dossiers, ni settings, ni partages)\n"
             "  all      : account + resource + dl, avec CSV 'all'\n"
             "\n"

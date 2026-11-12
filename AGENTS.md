@@ -62,7 +62,7 @@ Les options globales (`--dry-run`, `--foreground`, `--directly-clean`, `-q`,
 - `--type` definit le type d'objet migre. Les elements doivent appartenir a ce
   type :
   - `account` : `mail calendar contacts tasks briefcase cos folder color settings tags filter banlist whitelist share sendas sendonbehalfof`
-  - `resource` : `mail calendar share`
+  - `resource` : `mail calendar folder share`
   - `dl` : `members` uniquement (une DL n'a ni dossier, ni settings, ni partage)
   - `all` : combinaison account + resource + dl, avec CSV `all`
 - Verifier le help apres toute modification du parser ou de la validation.
