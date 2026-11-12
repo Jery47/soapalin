@@ -783,14 +783,27 @@ def copy_incoming_shares(
         result["errors"].append("partages entrants: %s" % describe_error(exc))
         return result
 
-    existing = {
-        (
-            str(share.get("ownerEmail") or "").lower(),
-            str(share.get("folderPath") or ""),
-        )
-        for share in destination_shares
-        if share.get("mid")
+    try:
+        destination_links = inventory_module.collect_mountpoints(target)
+    except Exception as exc:  # noqa: BLE001
+        result["errors"].append("partages entrants: %s" % describe_error(exc))
+        return result
+    links_by_id = {
+        str(link.get("id")): link for link in destination_links if link.get("id")
     }
+    existing = set()
+    for share in destination_shares:
+        if not share.get("mid"):
+            continue
+        link = links_by_id.get(str(share.get("mid") or ""))
+        if link is not None:
+            existing.add(
+                (
+                    str(share.get("ownerEmail") or "").lower(),
+                    str(share.get("folderPath") or ""),
+                    str(link.get("path") or ""),
+                )
+            )
     accepted = {}
     for share in source_shares:
         # ``mid`` is present for a share that is already mounted/accepted.
@@ -825,12 +838,14 @@ def copy_incoming_shares(
     for key, (_, share) in accepted.items():
         owner_email = _map_email(effective, share.get("ownerEmail") or "")
         folder_path = str(share.get("folderPath") or "/")
-        if key in existing:
+        mount_path = str(share.get("mountPath") or "/")
+        mount_key = (key[0], key[1], mount_path)
+        if mount_key in existing:
             result["skipped"] += 1
             continue
         if dry_run:
             result["created"] += 1
-            existing.add(key)
+            existing.add(mount_key)
             continue
         try:
             owner_id = resolve_id(destination_session, "account", owner_email)
@@ -841,8 +856,17 @@ def copy_incoming_shares(
             if isinstance(folder, list):
                 folder = folder[0] if folder else {}
             folder_id = str((folder or {}).get("id") or "1")
+            parent_path = mount_path.rsplit("/", 1)[0] or "/"
+            parent_payload = target.request(
+                "GetFolder", {"folder": {"path": parent_path}}
+            )
+            parent = unwrap(parent_payload, "folder")
+            if isinstance(parent, list):
+                parent = parent[0] if parent else {}
+            parent_id = str((parent or {}).get("id") or root_id)
             name = str(
-                share.get("name")
+                share.get("mountName")
+                or share.get("name")
                 or folder_path.rstrip("/").rsplit("/", 1)[-1]
                 or share.get("ownerName")
                 or owner_email
@@ -853,7 +877,7 @@ def copy_incoming_shares(
             rights = str(share.get("rights") or share.get("perm") or "")
             link = {
                 "name": name,
-                "l": root_id,
+                "l": parent_id,
                 "rid": folder_id,
                 "zid": owner_id,
             }
@@ -862,7 +886,7 @@ def copy_incoming_shares(
             if rights:
                 link["perm"] = rights
             target.create_mountpoint(**link)
-            existing.add(key)
+            existing.add(mount_key)
             result["created"] += 1
         except Exception as exc:  # noqa: BLE001
             text = describe_error(exc).lower()

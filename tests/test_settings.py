@@ -184,7 +184,8 @@ class IncomingShareTests(unittest.TestCase):
         def request(self, name, content=None):
             self.calls.append((name, content or {}))
             if name == "GetFolder":
-                return {"folder": {"id": "1"}}
+                path = ((content or {}).get("folder") or {}).get("path")
+                return {"folder": {"id": "99" if path == "/_MesCollaborateurs" else "1"}}
             return {}
 
         def get_share_info(self):
@@ -244,6 +245,38 @@ class IncomingShareTests(unittest.TestCase):
         self.assertEqual(payload["name"], "Calendar")
         self.assertEqual(payload["view"], "appointment")
         self.assertEqual(payload["perm"], "r")
+
+    def test_incoming_share_uses_source_mount_path(self):
+        destination = self.Destination()
+        result = settings_module.copy_incoming_shares(
+            {
+                "mountpoints": [
+                    {
+                        "mid": "12",
+                        "ownerEmail": "owner@example.com",
+                        "folderPath": "/Calendar de Bathie",
+                        "mountPath": "/_MesCollaborateurs/Calendar de Bathie",
+                        "mountName": "Calendar de Bathie",
+                        "granteeType": "usr",
+                        "granteeName": "user@example.com",
+                        "rights": "r",
+                        "view": "appointment",
+                    }
+                ]
+            },
+            self.Session(),
+            destination,
+            "user@example.com",
+            dry_run=False,
+        )
+        self.assertEqual(result["created"], 1)
+        payload = [
+            item[1]
+            for item in destination.calls
+            if item[0] == "create_mountpoint"
+        ][0]
+        self.assertEqual(payload["l"], "99")
+        self.assertEqual(payload["name"], "Calendar de Bathie")
 
     def test_direct_user_share_wins_over_public_duplicate(self):
         destination = self.Destination()

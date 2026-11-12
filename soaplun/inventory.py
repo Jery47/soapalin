@@ -566,6 +566,41 @@ def collect_folder_colors(client: Any) -> List[Dict[str, Any]]:
     return collect_folders(client, colored_only=True)
 
 
+def _walk_tree(node: Any) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    if not isinstance(node, dict):
+        return items
+    items.append(node)
+    for child in as_list(node.get("folder")) + as_list(node.get("link")):
+        items.extend(_walk_tree(child))
+    return items
+
+
+def collect_mountpoints(client: Any) -> List[Dict[str, Any]]:
+    """Return accepted share mountpoints with their local folder path."""
+    payload = client.request(
+        "GetFolder", {"folder": {"path": "/"}, "depth": "20"}
+    )
+    root = payload.get("folder") if isinstance(payload, dict) else None
+    items: List[Dict[str, Any]] = []
+    for node in _walk_tree(root):
+        path = str(node.get("absFolderPath") or "")
+        if not path or path == "/" or not (node.get("rid") or node.get("zid")):
+            continue
+        items.append(
+            {
+                "path": path,
+                "name": str(node.get("name") or ""),
+                "id": str(node.get("id") or ""),
+                "rid": str(node.get("rid") or ""),
+                "zid": str(node.get("zid") or ""),
+                "view": str(node.get("view") or ""),
+                "perm": str(node.get("perm") or ""),
+            }
+        )
+    return items
+
+
 def collect_outgoing_shares(
     client: Any, owner_email: str = ""
 ) -> List[Dict[str, Any]]:
@@ -735,6 +770,29 @@ def collect_account_settings(session: ZimbraSession, email: str) -> Dict[str, An
         [],
     )
     settings["mountpoints"] = safe("shares in", account.get_share_info, [])
+    mount_links = safe(
+        "mount links",
+        lambda: collect_mountpoints(mail) if mail else [],
+        [],
+    )
+    links_by_id = {
+        str(link.get("id")): link for link in mount_links if link.get("id")
+    }
+    links_by_remote = {
+        (str(link.get("zid")), str(link.get("rid"))): link
+        for link in mount_links
+    }
+    for share in settings["mountpoints"]:
+        if not isinstance(share, dict):
+            continue
+        link = links_by_id.get(str(share.get("mid") or ""))
+        if link is None:
+            link = links_by_remote.get(
+                (str(share.get("ownerId") or ""), str(share.get("folderId") or ""))
+            )
+        if link is not None:
+            share["mountPath"] = link.get("path", "")
+            share["mountName"] = link.get("name", "")
     try:
         permissions = (mail or account).request("GetPermission", {})
         settings["permissions"] = as_list(permissions.get("ace"))
