@@ -578,6 +578,34 @@ class OutgoingShareTests(unittest.TestCase):
         self.assertEqual(shares[0]["folderPath"], "/")
         self.assertEqual(shares[0]["rights"], "r")
 
+    def test_collects_public_grants(self):
+        client = self.FolderClient()
+        original = client.request
+
+        def request(name, content=None):
+            payload = original(name, content)
+            if name == "GetFolder":
+                payload["folder"]["folder"][0]["acl"] = {
+                    "grant": {"perm": "r", "gt": "pub"}
+                }
+            return payload
+
+        client.request = request
+        shares = inventory_module.collect_outgoing_shares(
+            client, "claire.genty@sdis21.org"
+        )
+        self.assertEqual(
+            shares,
+            [
+                {
+                    "folderPath": "/Calendar",
+                    "granteeName": "",
+                    "granteeType": "pub",
+                    "rights": "r",
+                }
+            ],
+        )
+
     def test_missing_grantee_is_ignored(self):
         destination_mail = self.FolderClient()
         destination = self.DestinationClient()

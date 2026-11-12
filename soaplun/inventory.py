@@ -581,7 +581,9 @@ def collect_outgoing_shares(
             grantee = str(grant.get("d") or "").strip()
             rights = str(grant.get("perm") or grant.get("right") or "").strip()
             grantee_type = str(grant.get("gt") or "usr")
-            if not grantee or not rights:
+            if not rights:
+                continue
+            if not grantee and grantee_type not in {"pub", "all"}:
                 continue
             if owner_email and grantee.lower() == owner_email.lower():
                 continue
