@@ -7,8 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from soaplun import cli
-from soaplun import inventory
+from soaplun import cli, inventory
 from soaplun.commands import migrate as migrate_cmd
 from soaplun.config import Config
 
@@ -207,6 +206,8 @@ class NewCliParserTests(unittest.TestCase):
             "--retry-failed [RAPPORT]",
             "--keep-tgz-days N",
             "--json (uniquement avec --dry-run)",
+            "type d'objet migre",
+            "dl       : liste de distribution (members uniquement)",
         ):
             self.assertIn(value, help_text)
 

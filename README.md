@@ -48,6 +48,23 @@ Options globales, avant la sous-commande :
 
 Sous-commandes : `server`, `provision`, `migrate`, `job`.
 
+## Architecture
+
+```text
+soaplun/cli.py             parser et dispatch
+soaplun/runner.py          orchestration partagee CLI
+soaplun/pipeline.py        flux provision/migrate
+soaplun/planner.py         construction des plans
+soaplun/diff.py            comparaisons/normalisations
+soaplun/apply.py           execution destination
+soaplun/mailbox*.py        copies de boites (backend/archive/orchestration)
+soaplun/settings*.py       reglages, filtres, partages, droits
+soaplun/inventory*.py      collecte et persistance des inventaires
+soaplun/cleanup.py         clean et deplacement vers trash
+soaplun/storage.py         ecritures atomiques
+soaplun/schema.py          validation des artefacts
+```
+
 ## Serveurs
 
 ```bash
@@ -110,6 +127,8 @@ account  : mail calendar contacts tasks briefcase cos folder color settings
 resource : mail calendar
 dl       : members
 ```
+
+`--type` definit le type d'objet migre. `dl` n'accepte que `members` : une liste de distribution n'a ni dossiers, ni settings, ni partages.
 
 `--type all` exige le CSV `all`. Les tags manquants sont resynchronisés en mode
 différentiel.
@@ -201,8 +220,26 @@ Les états et journaux sont dans `data/jobs/<id>/`.
 --keep-tgz-days N
 --mapping-domain CSV
 --mapping-host CSV
+--resume                 reprendre la derniere copie de boites interrompue
 --json
 ```
+
+L'option globale `--directly-clean` deplace les archives temporaires de chaque
+compte vers `data/trash/` apres un import reussi.
+
+## Nettoyage
+
+```bash
+soapalin clean --dry-run
+soapalin clean mailboxes --older-than 7
+soapalin clean all --older-than 30 --keep-last 5
+soapalin clean snapshots --keep-last 10
+```
+
+`clean` supprime uniquement les donnees temporaires. Il ne deplace rien et ne
+demande pas de confirmation. Cibles : `mailboxes` (defaut), `jobs`, `reports`,
+`snapshots`, `trash`, `all`. Les jobs actifs et le repertoire de la migration en
+cours sont toujours conserves.
 
 ## Données
 
@@ -213,11 +250,15 @@ data/snapshots/          inventaires
 data/mailboxes/          archives TGZ temporaires
 data/reports/            rapports JSON, CSV et sauvegardes
 data/jobs/               états et journaux des jobs
+data/trash/              archives deplacees par --directly-clean
 ```
 
-## Tests
+## Tests et qualite
 
 ```bash
 pytest
+pytest --cov=soaplun --cov-report=term-missing
+ruff check soaplun tests
+mypy
 python -m unittest discover -s tests
 ```

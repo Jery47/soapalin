@@ -18,7 +18,7 @@ serveurs Zimbra vers une destination.
    `resolve=skip` est toujours applique aux archives de boites.
 3. **Multi-serveurs decouple** : chaque serveur a son fichier
    `config/servers/<label>.json`.
-4. **Compatibilite Python** : Python 3.6+ (3.8+ recommande).
+4. **Compatibilite Python** : Python 3.8+.
 
 ---
 
@@ -28,6 +28,9 @@ serveurs Zimbra vers une destination.
 pip install -e .[dev]
 pip install -r requirements.txt
 pytest
+pytest --cov=soaplun --cov-report=term-missing
+ruff check soaplun tests
+mypy
 python -m unittest discover -s tests
 ```
 
@@ -42,10 +45,27 @@ soapalin server inventory src1
 soapalin provision account users.csv --from src1 --to dst1 --password "Secret!"
 soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1
 soapalin job list
+soapalin clean --dry-run
+soapalin clean mailboxes --older-than 7
 ```
 
-Les options globales (`--dry-run`, `--foreground`, `-q`, `-v`, `--debug`)
-doivent etre placees avant la sous-commande.
+Les options globales (`--dry-run`, `--foreground`, `--directly-clean`, `-q`,
+`-v`, `--debug`) doivent etre placees avant la sous-commande.
+
+### Verification obligatoire du help
+
+- Toujours executer `python soapalin.py -h` **et** le help de la sous-commande
+  concernee (`python soapalin.py migrate -h`, etc.) avant de modifier ou de
+  documenter la CLI.
+- Le help est la reference de l'interface : ne pas supposer qu'une option ou
+  qu'un element s'applique a un type.
+- `--type` definit le type d'objet migre. Les elements doivent appartenir a ce
+  type :
+  - `account` : `mail calendar contacts tasks briefcase cos folder color settings tags filter banlist whitelist share sendas sendonbehalfof`
+  - `resource` : `mail calendar`
+  - `dl` : `members` uniquement (une DL n'a ni dossier, ni settings, ni partage)
+  - `all` : combinaison account + resource + dl, avec CSV `all`
+- Verifier le help apres toute modification du parser ou de la validation.
 
 ---
 
@@ -67,18 +87,35 @@ Soap_a_lun/
       provision.py            sous-commandes provisioning
       migrate.py              migration et differentiel
       job.py                  gestion des jobs
+      clean.py                suppression des donnees temporaires
     config.py                 configuration, serveurs, secrets
     connections.py            sessions SOAP, garde lecture seule
-    diff.py                   calcul de migration en memoire
+    diff.py                   comparaisons et normalisations
+    planner.py                construction des plans de migration
     apply.py                  provisioning destination
-    mailbox.py                export/import boites (zmmailbox ou REST)
-    inventory.py              inventaires JSON
+    pipeline.py               orchestration provision/migrate
+    runner.py                 orchestration partagee CLI
+    context.py                RunContext (options, cancel, rapports)
+    mailbox.py                orchestration des copies de boites
+    mailbox_common.py         constantes/erreurs communes boites
+    mailbox_archive.py        backend zmmailbox/REST, export/import
+    inventory.py              collecteurs d'inventaire
+    inventory_store.py        persistance/index/cache des snapshots
     jobs.py                   jobs en arriere-plan (etat, logs, stop)
+    cleanup.py                nettoyage manuel et deplacement vers trash
     rest.py                   client REST stdlib
-    settings.py               reglages, filtres, partages, droits
+    settings.py               orchestration des reglages
+    settings_common.py        constantes/helpers communs reglages
+    settings_copy.py          signatures, prefs, dossiers, filtres, partages
+    storage.py                ecritures atomiques JSON/bytes
+    models.py                 contrats TypedDict (Plan, Snapshot, ...)
+    inputs.py                 lecture CSV et selection d'elements
+    mapping.py                mapping domaines/emails/hotes
+    parallel.py               helper de parallelisation ordonnee
+    schema.py                 validation des snapshots/plans
   vendor/                     bibliotheques Zimbra embarquees
   config/                     configuration locale
-  data/                       snapshots, archives, rapports, jobs
+  data/                       snapshots, archives, rapports, jobs, trash
   tests/                      tests unitaires
 ```
 
