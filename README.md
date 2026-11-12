@@ -112,10 +112,10 @@ soapalin provision users.csv --type account --from src1 --to dst1 --random-passw
 ## Migration
 
 ```bash
-soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1
+soapalin migrate users.csv --type account --item mail,calendar,settings --from src1 --to dst1
 soapalin migrate all --type account --from src1 --to dst1
-soapalin migrate resources.csv mail calendar --type resource --from src1 --to dst1
-soapalin migrate lists.csv members --type dl --from src1 --to dst1
+soapalin migrate resources.csv --type resource --item mail,calendar --from src1 --to dst1
+soapalin migrate lists.csv --type dl --item members --from src1 --to dst1
 soapalin migrate all --type all --from src1 --to dst1
 ```
 
@@ -139,7 +139,7 @@ Il faut d'abord cr?er les COS, puis rafra?chir l'inventaire destination :
 ```bash
 soapalin --foreground provision all --type cos --from src1 --to dst1
 soapalin --foreground server inventory dst1 --no-stats
-soapalin --foreground migrate users.csv cos --type account --from src1 --to dst1
+soapalin --foreground migrate users.csv --type account --item cos --from src1 --to dst1
 ```
 
 ### Partages
@@ -155,18 +155,18 @@ non accept?s sont ignor?s.
 - Les deux peuvent ?tre combin?s : `folder` est ex?cut? avant `color`.
 
 ```bash
-soapalin migrate users.csv folder --type account --from src1 --to dst1
-soapalin migrate users.csv color --type account --from src1 --to dst1
-soapalin migrate users.csv folder color --type account --from src1 --to dst1
+soapalin migrate users.csv --type account --item folder --from src1 --to dst1
+soapalin migrate users.csv --type account --item color --from src1 --to dst1
+soapalin migrate users.csv --type account --item folder,color --from src1 --to dst1
 ```
 
 ### Différentiel
 
 ```bash
-soapalin migrate users.csv mail calendar settings --type account \
+soapalin migrate users.csv --type account --item mail,calendar,settings \
   --from src1 --to dst1 --differential
 
-soapalin migrate users.csv mail calendar settings --type account \
+soapalin migrate users.csv --type account --item mail,calendar,settings \
   --from src1 --to dst1 --differential=2026-10-01
 ```
 
@@ -176,7 +176,7 @@ contacts, agendas et tâches.
 ### Reprise des échecs
 
 ```bash
-soapalin migrate users.csv mail --type account --retry-failed \
+soapalin migrate users.csv --type account --item mail --retry-failed \
   --from src1 --to dst1
 ```
 
@@ -185,7 +185,7 @@ soapalin migrate users.csv mail --type account --retry-failed \
 L'option globale `--dry-run` se place avant la sous-commande :
 
 ```bash
-soapalin --dry-run migrate users.csv all --type account --from src1 --to dst1
+soapalin --dry-run migrate users.csv --type account --item all --from src1 --to dst1
 ```
 
 `--json` n'est autorisé qu'avec `--dry-run`.
@@ -205,7 +205,7 @@ soapalin job stop all
 Pour exécuter au premier plan :
 
 ```bash
-soapalin --foreground migrate users.csv mail --type account --from src1 --to dst1
+soapalin --foreground migrate users.csv --type account --item mail --from src1 --to dst1
 ```
 
 Les états et journaux sont dans `data/jobs/<id>/`.

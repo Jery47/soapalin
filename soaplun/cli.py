@@ -27,6 +27,7 @@ from .inputs import (
     RESOURCE_ELEMENTS,
     iso_date,
     normalize_migrate_elements,
+    parse_item_option,
     read_mapping,
     read_object_names,
     read_object_selection,
@@ -115,9 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
             "  Les elements doivent appartenir au type ; un element incompatible est ignore.\n"
             "\n"
             "  Syntaxe :\n"
-            "    soapalin migrate CSV|all ELEMENTS... --type {account,resource,dl,all} --from SRC --to DST\n"
+            "    soapalin migrate CSV|all --type {account,resource,dl,all} --item ELEMENTS --from SRC --to DST\n"
             "\n"
             "  Options :\n"
+            "    --item ELEMENTS                          Elements separes par des virgules, sans espace.\n"
             "    --from LABEL --to LABEL                 Serveurs source et destination.\n"
             "    --mapping-domain CSV --mapping-host CSV  Correspondances de domaines et d'hotes.\n"
             "    --differential [YYYY-MM-DD]              Migration incrementale depuis une date.\n"
@@ -157,27 +159,27 @@ def build_parser() -> argparse.ArgumentParser:
             "      Cree les comptes avec des mots de passe aleatoires et leurs droits admin.\n"
             "\n"
             "  # Migration des comptes\n"
-            "  soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1\n"
+            "  soapalin migrate users.csv --type account --item mail,calendar,settings --from src1 --to dst1\n"
             "      Copie mails, agendas et settings des comptes du CSV.\n"
-            "  soapalin migrate users.csv cos --type account --from src1 --to dst1\n"
+            "  soapalin migrate users.csv --type account --item cos --from src1 --to dst1\n"
             "      Applique la COS source aux comptes deja existants.\n"
             "  soapalin migrate all --type account --from src1 --to dst1\n"
             "      Migre tous les comptes sources.\n"
             "  soapalin migrate all --type all --from src1 --to dst1\n"
             "      Migre les comptes, ressources et listes de distribution.\n"
-            "  soapalin migrate users.csv mail --type account --differential --from src1 --to dst1\n"
+            "  soapalin migrate users.csv --type account --item mail --differential --from src1 --to dst1\n"
             "      Migre les donnees modifiees depuis la derniere synchronisation.\n"
-            "  soapalin migrate users.csv mail --type account --differential=2026-10-01 --from src1 --to dst1\n"
+            "  soapalin migrate users.csv --type account --item mail --differential=2026-10-01 --from src1 --to dst1\n"
             "      Migre uniquement les donnees modifiees depuis le 1er octobre 2026.\n"
-            "  soapalin migrate users.csv mail --type account --retry-failed --from src1 --to dst1\n"
+            "  soapalin migrate users.csv --type account --item mail --retry-failed --from src1 --to dst1\n"
             "      Reprend les comptes en echec du dernier rapport.\n"
             "  soapalin migrate all --type dl --from src1 --to dst1\n"
             "      Migre les membres des listes de distribution.\n"
-            "  soapalin migrate all --type resource folder share --from src1 --to dst1\n"
+            "  soapalin migrate all --type resource --item folder,share --from src1 --to dst1\n"
             "      Cree les dossiers et partages des ressources calendrier.\n"
-            "  soapalin --dry-run migrate users.csv all --type account --json --from src1 --to dst1\n"
+            "  soapalin --dry-run migrate users.csv --type account --item all --json --from src1 --to dst1\n"
             "      Simule la migration et produit un rapport JSON.\n"
-            "  soapalin --foreground migrate users.csv mail --type account --from src1 --to dst1\n"
+            "  soapalin --foreground migrate users.csv --type account --item mail --from src1 --to dst1\n"
             "      Execute la migration dans le terminal au lieu d'un job.\n"
             "\n"
             "  # Jobs et nettoyage\n"
@@ -236,7 +238,9 @@ def validate(args, parser) -> None:
         if args.type == "all" and str(args.csv).strip().lower() != "all":
             parser.error("--type all exige le CSV 'all'.")
         try:
-            args.elements = normalize_migrate_elements(args.type, args.elements)
+            args.elements = normalize_migrate_elements(
+                args.type, parse_item_option(getattr(args, "item", "all"))
+            )
         except ValueError as exc:
             parser.error(str(exc))
         if getattr(args, "retry_failed", None) is not None and not args.csv:

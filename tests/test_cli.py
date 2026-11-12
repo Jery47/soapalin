@@ -198,7 +198,7 @@ class NewCliParserTests(unittest.TestCase):
             "server add src1 --role source",
             "provision domains.csv --type domain",
             "migrate all --type all",
-            "migrate users.csv mail --type account --differential",
+            "migrate users.csv --type account --item mail --differential",
             "job stop all",
             "Options de migrate",
             "--mapping-domain CSV",
@@ -267,6 +267,7 @@ class NewCliParserTests(unittest.TestCase):
             [
                 "migrate",
                 "users.csv",
+                "--item",
                 "mail",
                 "--type",
                 "account",
@@ -323,14 +324,83 @@ class NewCliParserTests(unittest.TestCase):
         )
         self.assertEqual(args.parallelism, 6)
 
+    def test_item_all_and_comma_values(self):
+        all_args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "--type",
+                "account",
+                "--item",
+                "all",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertIn("mail", all_args.elements)
+        self.assertIn("settings", all_args.elements)
+        comma_args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "--type",
+                "account",
+                "--item",
+                "mail,calendar,settings",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(
+            comma_args.elements, ["mail", "calendar", "settings"]
+        )
+
+    def test_item_rejects_spaces(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "--type",
+                    "account",
+                    "--item",
+                    "mail, calendar",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
+    def test_positional_elements_are_rejected(self):
+        with self.assertRaises(SystemExit) as context:
+            self.parsed(
+                [
+                    "migrate",
+                    "users.csv",
+                    "mail",
+                    "--type",
+                    "account",
+                    "--from",
+                    "src1",
+                    "--to",
+                    "dst1",
+                ]
+            )
+        self.assertEqual(context.exception.code, 2)
+
     def test_valid_migrate_account(self):
         args = self.parsed(
             [
                 "migrate",
                 "users.csv",
-                "mail",
-                "calendar",
-                "settings",
+                "--item",
+                "mail,calendar,settings",
                 "--type",
                 "account",
                 "--from",
@@ -347,6 +417,7 @@ class NewCliParserTests(unittest.TestCase):
             [
                 "migrate",
                 "users.csv",
+                "--item",
                 "briefcase",
                 "--type",
                 "account",
@@ -363,6 +434,7 @@ class NewCliParserTests(unittest.TestCase):
             [
                 "migrate",
                 "users.csv",
+                "--item",
                 "cos",
                 "--type",
                 "account",
@@ -435,8 +507,8 @@ class NewCliParserTests(unittest.TestCase):
             [
                 "migrate",
                 "users.csv",
-                "folder",
-                "color",
+                "--item",
+                "folder,color",
                 "--type",
                 "account",
                 "--from",
@@ -452,8 +524,8 @@ class NewCliParserTests(unittest.TestCase):
             [
                 "migrate",
                 "resources.csv",
-                "mail",
-                "calendar",
+                "--item",
+                "mail,calendar",
                 "--type",
                 "resource",
                 "--from",
@@ -469,6 +541,7 @@ class NewCliParserTests(unittest.TestCase):
             [
                 "migrate",
                 "all",
+                "--item",
                 "folder",
                 "--type",
                 "resource",
@@ -485,6 +558,7 @@ class NewCliParserTests(unittest.TestCase):
             [
                 "migrate",
                 "all",
+                "--item",
                 "share",
                 "--type",
                 "resource",
@@ -501,6 +575,7 @@ class NewCliParserTests(unittest.TestCase):
             [
                 "migrate",
                 "lists.csv",
+                "--item",
                 "members",
                 "--type",
                 "dl",
@@ -551,6 +626,7 @@ class NewCliParserTests(unittest.TestCase):
                 [
                     "migrate",
                     "users.csv",
+                    "--item",
                     "unknown",
                     "--type",
                     "account",
@@ -569,8 +645,8 @@ class NewCliParserTests(unittest.TestCase):
                 [
                     "migrate",
                     "users.csv",
-                    "mail",
-                    "settings",
+                    "--item",
+                    "mail,settings",
                     "--type",
                     "resource",
                     "--from",
@@ -588,6 +664,7 @@ class NewCliParserTests(unittest.TestCase):
                 [
                     "migrate",
                     "users.csv",
+                    "--item",
                     "settings",
                     "--type",
                     "resource",

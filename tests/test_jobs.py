@@ -26,7 +26,7 @@ class JobStoreTests(unittest.TestCase):
         self.assertTrue(self.store.stop_requested(spec["id"]))
 
     def test_launch_sets_running_state(self):
-        spec = self.store.create(["migrate", "users.csv", "mail", "--type", "account"])
+        spec = self.store.create(["migrate", "users.csv", "--type", "account", "--item", "mail"])
 
         class Process:
             pid = 1234
@@ -40,8 +40,8 @@ class JobStoreTests(unittest.TestCase):
         self.assertEqual(state["pid"], 1234)
 
     def test_selected_by_prefix(self):
-        first = self.store.create(["migrate", "users.csv", "mail", "--type", "account"])
-        second = self.store.create(["migrate", "users.csv", "share", "--type", "account"])
+        first = self.store.create(["migrate", "users.csv", "--type", "account", "--item", "mail"])
+        second = self.store.create(["migrate", "users.csv", "--type", "account", "--item", "share"])
         self.assertEqual(self.store.selected(first["id"])[0]["id"], first["id"])
         self.assertEqual(len(self.store.selected("all")), 2)
         self.assertEqual(self.store.selected(second["id"])[0]["id"], second["id"])

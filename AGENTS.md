@@ -43,7 +43,7 @@ soapalin server add src1 --role source
 soapalin server test src1
 soapalin server inventory src1
 soapalin provision users.csv --type account --from src1 --to dst1 --password "Secret!"
-soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1
+soapalin migrate users.csv --type account --item mail,calendar,settings --from src1 --to dst1
 soapalin job list
 soapalin clean --dry-run
 soapalin clean mailboxes --older-than 7

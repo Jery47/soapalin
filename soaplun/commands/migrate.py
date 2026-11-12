@@ -54,10 +54,11 @@ def add_parser(subparsers):
             "  all      : account + resource + dl, avec CSV 'all'\n"
             "\n"
             "Exemples:\n"
-            "  soapalin migrate users.csv mail calendar settings --type account --from src1 --to dst1\n"
+            "  soapalin migrate users.csv --type account --item mail,calendar,settings --from src1 --to dst1\n"
+            "  soapalin migrate users.csv --type account --item all --from src1 --to dst1\n"
             "  soapalin migrate all --type account --from src1 --to dst1\n"
-            "  soapalin migrate resources.csv mail calendar --type resource --from src1 --to dst1\n"
-            "  soapalin migrate lists.csv members --type dl --from src1 --to dst1\n"
+            "  soapalin migrate resources.csv --type resource --item mail,calendar --from src1 --to dst1\n"
+            "  soapalin migrate lists.csv --type dl --item members --from src1 --to dst1\n"
             "  soapalin migrate all --type all --from src1 --to dst1\n"
             "\n"
             "Attention : --differential accepte une date optionnelle et peut avaler\n"
@@ -68,7 +69,12 @@ def add_parser(subparsers):
     from ..cli import _add_connection_options
 
     parser.add_argument("csv", metavar="CSV|all")
-    parser.add_argument("elements", nargs="*", default=["all"])
+    parser.add_argument(
+        "--item",
+        default="all",
+        metavar="ELEMENTS",
+        help="elements separes par des virgules, sans espace (ex. mail,calendar)",
+    )
     _add_connection_options(parser)
     parser.add_argument(
         "--type", choices=("account", "resource", "dl", "all"), required=True

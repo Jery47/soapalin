@@ -71,6 +71,18 @@ def elements_for_type(kind: str) -> List[str]:
     return list(ACCOUNT_ELEMENTS + RESOURCE_ELEMENTS + DL_ELEMENTS)
 
 
+def parse_item_option(value: str) -> List[str]:
+    text = str(value if value is not None else "all").strip()
+    if not text:
+        text = "all"
+    values = text.split(",")
+    if any(not part or part != part.strip() for part in values):
+        raise ValueError(
+            "--item attend des elements separes par des virgules, sans espace."
+        )
+    return values
+
+
 def normalize_migrate_elements(
     kind: str,
     values: Optional[Iterable[str]],
