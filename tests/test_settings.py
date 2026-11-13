@@ -257,6 +257,7 @@ class IncomingShareTests(unittest.TestCase):
                         "folderPath": "/Calendar de Bathie",
                         "mountPath": "/_MesCollaborateurs/Calendar de Bathie",
                         "mountName": "Calendar de Bathie",
+                        "mountColor": "5",
                         "granteeType": "usr",
                         "granteeName": "user@example.com",
                         "rights": "r",
@@ -277,6 +278,7 @@ class IncomingShareTests(unittest.TestCase):
         ][0]
         self.assertEqual(payload["l"], "99")
         self.assertEqual(payload["name"], "Calendar de Bathie")
+        self.assertEqual(payload["color"], "5")
 
     def test_direct_user_share_wins_over_public_duplicate(self):
         destination = self.Destination()

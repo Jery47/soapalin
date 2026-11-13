@@ -760,7 +760,7 @@ def copy_incoming_shares(
     destination_mail=None,
 ) -> Dict[str, Any]:
     """Mount shares already accepted on the source for the destination user."""
-    result = {"created": 0, "skipped": 0, "errors": []}
+    result = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
     source_shares = source_settings.get("mountpoints") or []
     if not source_shares:
         return result
@@ -791,19 +791,19 @@ def copy_incoming_shares(
     links_by_id = {
         str(link.get("id")): link for link in destination_links if link.get("id")
     }
-    existing = set()
+    existing = {}
     for share in destination_shares:
         if not share.get("mid"):
             continue
         link = links_by_id.get(str(share.get("mid") or ""))
         if link is not None:
-            existing.add(
+            existing[
                 (
                     str(share.get("ownerEmail") or "").lower(),
                     str(share.get("folderPath") or ""),
                     str(link.get("path") or ""),
                 )
-            )
+            ] = link
     accepted = {}
     for share in source_shares:
         # ``mid`` is present for a share that is already mounted/accepted.
@@ -840,12 +840,48 @@ def copy_incoming_shares(
         folder_path = str(share.get("folderPath") or "/")
         mount_path = str(share.get("mountPath") or "/")
         mount_key = (key[0], key[1], mount_path)
-        if mount_key in existing:
-            result["skipped"] += 1
+        desired_color = str(share.get("mountColor") or "").strip()
+        desired_rgb = str(share.get("mountRgb") or "").strip()
+        current_link = existing.get(mount_key)
+        if current_link is not None:
+            current_color = str(current_link.get("color") or "").strip()
+            current_rgb = str(current_link.get("rgb") or "").strip()
+            changed = (
+                (desired_rgb and current_rgb != desired_rgb)
+                or (
+                    not desired_rgb
+                    and desired_color
+                    and current_color != desired_color
+                )
+            )
+            if not changed:
+                result["skipped"] += 1
+                continue
+            if dry_run:
+                result["updated"] += 1
+                continue
+            action = {
+                "op": "color",
+                "id": current_link.get("id"),
+            }
+            if desired_rgb:
+                action["rgb"] = desired_rgb
+            else:
+                action["color"] = desired_color
+            try:
+                target.request("FolderAction", {"action": action})
+                current_link["color"] = desired_color
+                current_link["rgb"] = desired_rgb
+                result["updated"] += 1
+            except Exception as exc:  # noqa: BLE001
+                result["errors"].append(
+                    "couleur montage %s : %s"
+                    % (mount_path, describe_error(exc))
+                )
             continue
         if dry_run:
             result["created"] += 1
-            existing.add(mount_key)
+            existing[mount_key] = {"id": ""}
             continue
         try:
             owner_id = resolve_id(destination_session, "account", owner_email)
@@ -885,8 +921,12 @@ def copy_incoming_shares(
                 link["view"] = view
             if rights:
                 link["perm"] = rights
+            if desired_rgb:
+                link["rgb"] = desired_rgb
+            elif desired_color:
+                link["color"] = desired_color
             target.create_mountpoint(**link)
-            existing.add(mount_key)
+            existing[mount_key] = {"id": ""}
             result["created"] += 1
         except Exception as exc:  # noqa: BLE001
             text = describe_error(exc).lower()

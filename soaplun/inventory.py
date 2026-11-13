@@ -596,6 +596,8 @@ def collect_mountpoints(client: Any) -> List[Dict[str, Any]]:
                 "zid": str(node.get("zid") or ""),
                 "view": str(node.get("view") or ""),
                 "perm": str(node.get("perm") or ""),
+                "color": str(node.get("color") or ""),
+                "rgb": str(node.get("rgb") or ""),
             }
         )
     return items
@@ -793,6 +795,8 @@ def collect_account_settings(session: ZimbraSession, email: str) -> Dict[str, An
         if link is not None:
             share["mountPath"] = link.get("path", "")
             share["mountName"] = link.get("name", "")
+            share["mountColor"] = link.get("color", "")
+            share["mountRgb"] = link.get("rgb", "")
     try:
         permissions = (mail or account).request("GetPermission", {})
         settings["permissions"] = as_list(permissions.get("ace"))
