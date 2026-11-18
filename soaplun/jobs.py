@@ -1,17 +1,16 @@
 """Background CLI jobs: create, launch, follow and stop migration processes."""
 
 import datetime
-import json
 import os
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List
 
+from . import storage
 
 TERMINAL_STATUSES = {"succeeded", "failed", "stopped", "interrupted"}
 
@@ -34,29 +33,10 @@ class JobStore:
         return self.directory / safe
 
     def _write_json(self, path: Path, payload: Dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, indent=1)
-                handle.write("\n")
-            os.replace(tmp_name, path)
-        finally:
-            if os.path.exists(tmp_name):
-                try:
-                    os.unlink(tmp_name)
-                except OSError:
-                    pass
+        storage.write_json_atomic(path, payload, indent=1)
 
     def _read_json(self, path: Path) -> Dict[str, Any]:
-        try:
-            with path.open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except (OSError, ValueError):
-            return {}
-        return payload if isinstance(payload, dict) else {}
+        return storage.read_json(path)
 
     def create(self, argv: List[str], title: str = "") -> Dict[str, Any]:
         stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -88,7 +68,7 @@ class JobStore:
         self._write_json(directory / "state.json", state)
         return spec
 
-    def launch(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+    def launch(self, spec: Dict[str, Any]) -> subprocess.Popen:
         directory = self._job_dir(spec["id"])
         log_path = directory / "job.log"
         env = dict(os.environ)
@@ -166,6 +146,13 @@ class JobStore:
             raise KeyError("Job introuvable : %s" % selector)
         return matches
 
+    def active(self) -> List[Dict[str, Any]]:
+        return [
+            state
+            for state in self.list()
+            if state.get("status") not in TERMINAL_STATUSES
+        ]
+
     def request_stop(self, job_id: str) -> Dict[str, Any]:
         state = self.state(job_id)
         if not state:
@@ -194,6 +181,7 @@ def follow_jobs(
     store: JobStore,
     jobs: List[Dict[str, Any]],
     sleep_seconds: float = 0.5,
+    out: Callable[..., None] = print,
 ) -> int:
     offsets: Dict[str, int] = {state["id"]: 0 for state in jobs}
     active = {
@@ -202,14 +190,14 @@ def follow_jobs(
         if state.get("status") not in TERMINAL_STATUSES
     }
     if not active:
-        print("Aucun job en cours.")
+        out("Aucun job en cours.")
         return 0
     printed = set()
     while active:
         for job_id in sorted(list(active)):
             path = store.log_path(job_id)
             if job_id not in printed:
-                print("==> %s (%s)" % (job_id, store.state(job_id).get("status", "")))
+                out("==> %s (%s)" % (job_id, store.state(job_id).get("status", "")))
                 printed.add(job_id)
             try:
                 size = path.stat().st_size
@@ -221,11 +209,10 @@ def follow_jobs(
                     handle.seek(offset)
                     chunk = handle.read()
                     offsets[job_id] = handle.tell()
-                sys.stdout.write(chunk)
-                sys.stdout.flush()
+                out(chunk, end="")
             state = store.state(job_id)
             if state.get("status") in TERMINAL_STATUSES:
-                print("[%s] %s" % (job_id, state.get("status")))
+                out("[%s] %s" % (job_id, state.get("status")))
                 active.discard(job_id)
         if active:
             time.sleep(sleep_seconds)

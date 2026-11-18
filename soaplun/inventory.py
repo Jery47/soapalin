@@ -45,7 +45,7 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-Progress = Optional[Callable[[str, int, int, str], None]]
+Progress = Optional[Callable[[int, int, str], None]]
 
 
 # ----------------------------------------------------------------------
@@ -436,7 +436,7 @@ def collect_accounts(
         with progress_lock:
             completed += 1
             if progress:
-                progress("accounts", completed, total, candidates[index - 1])
+                progress(completed, total, candidates[index - 1])
 
     return map_ordered(
         candidates, task, parallelism, on_complete=completed_task
@@ -901,7 +901,7 @@ def collect_snapshot(
             done += 1
             current = done
         if progress:
-            progress("collect", current, steps_total, "Collecting %s" % label)
+            progress(current, steps_total, "Collecting %s" % label)
 
     def run_phase(items, use_shared: bool):
         def run(item):
@@ -946,7 +946,7 @@ def collect_snapshot(
     if cancel is not None and cancel.is_set():
         raise RuntimeError("Inventaire interrompu.")
     if progress:
-        progress("collect", done, steps_total, "Collecting accounts")
+        progress(done, steps_total, "Collecting accounts")
     try:
         snapshot["accounts"] = collect_accounts(
             session,
@@ -986,7 +986,7 @@ def collect_snapshot(
     if cancel is not None and cancel.is_set():
         raise RuntimeError("Inventaire interrompu.")
     if progress:
-        progress("saving", steps_total, steps_total, "Writing snapshot")
+        progress(steps_total, steps_total, "Writing snapshot")
 
     # Enrich accounts with COS names where possible.
     cos_by_id = {item["id"]: item["name"] for item in snapshot["cos"] if item.get("id")}

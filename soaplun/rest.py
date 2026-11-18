@@ -198,7 +198,9 @@ class RestClient:
                     exc,
                 )
                 time.sleep(REST_RETRY_DELAY)
-        raise last_error  # pragma: no cover
+        if last_error is not None:
+            raise last_error
+        raise RestError("REST download failed without an error")
 
     def _upload_once(
         self,
@@ -303,7 +305,9 @@ class RestClient:
                     exc,
                 )
                 time.sleep(REST_RETRY_DELAY)
-        raise last_error  # pragma: no cover
+        if last_error is not None:
+            raise last_error
+        raise RestError("REST upload failed without an error")
 
 
 def append_query(url: str, **params) -> str:

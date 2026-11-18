@@ -5,21 +5,22 @@ delete/unset path: the destination is never pruned.
 """
 
 import datetime
-import json
-import string
 import secrets
+import string
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from zimsoap.client import ZimbraSoapServerError
 
 from . import config as config_module
+from . import storage
 from .connections import ZimbraSession, describe_error
-from .inventory import now_iso
 from .diff import action_sort_key
+from .inventory import now_iso
+from .models import Plan, PlanOptions
+from .parallel import map_ordered
+from .schema import validate_plan
 
 Progress = Optional[Callable[[int, int, str], None]]
 
@@ -108,9 +109,7 @@ def _backup(
         "".join(c if c.isalnum() or c in "@._-" else "_" for c in target),
     )
     path = directory / filename
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=1)
-        handle.write("\n")
+    storage.write_json_atomic(path, payload, indent=1)
     return str(path)
 
 
@@ -406,7 +405,7 @@ def _password(config: config_module.Config, source: Optional[str]) -> str:
 # Apply
 # ----------------------------------------------------------------------
 def check_safety(
-    config: config_module.Config, plan: Optional[Dict[str, Any]] = None
+    config: config_module.Config, plan: Optional[Plan] = None
 ) -> None:
     source = config.connection("source")
     destination = config.connection("destination")
@@ -461,8 +460,8 @@ def _action_in_accounts(
 
 def plan_options_for_run(
     config: config_module.Config,
-    plan: Dict[str, Any],
-    overrides: Optional[Dict[str, Any]] = None,
+    plan: Plan,
+    overrides: Optional[PlanOptions] = None,
 ) -> Dict[str, Any]:
     """Resolve plan options and decrypt the fixed password for this run."""
     effective = dict(plan.get("options") or {})
@@ -504,10 +503,7 @@ def _finish_report(
     }
     if not dry_run:
         path = config.storage_path("report_path") / ("apply-%s.json" % stamp)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(report, handle, ensure_ascii=False, indent=1)
-            handle.write("\n")
+        storage.write_json_atomic(path, report, indent=1)
         report["report_path"] = str(path)
     if generated_passwords:
         report["_generated_passwords"] = generated_passwords
@@ -526,7 +522,6 @@ def _apply_actions_parallel(
     overall_total=None,
     offset=0,
 ):
-    results = [None] * total
     profile = config.current_profile()
     local = threading.local()
     progress_lock = threading.Lock()
@@ -559,7 +554,7 @@ def _apply_actions_parallel(
                         "error": "Annule par l'utilisateur",
                     }
                 )
-                return index, record, ""
+                return record
             handler = HANDLERS.get(kind)
             if handler is None:
                 record.update(
@@ -568,7 +563,7 @@ def _apply_actions_parallel(
                         "error": "Type d'action inconnu : %s" % kind,
                     }
                 )
-                return index, record, ""
+                return record
             started = time.time()
             try:
                 _RUN_OPTIONS.last_random = None
@@ -585,7 +580,8 @@ def _apply_actions_parallel(
                 )
                 password = getattr(_RUN_OPTIONS, "last_random", None)
                 record.update({"status": "ok", "message": message})
-                return index, record, str(password) if password else ""
+                if password:
+                    record["_generated_password"] = str(password)
             except Exception as exc:  # noqa: BLE001 - reported per action
                 if _is_already_exists(exc):
                     record.update(
@@ -598,15 +594,12 @@ def _apply_actions_parallel(
                     record.update(
                         {"status": "failed", "error": describe_error(exc)}
                     )
-                return index, record, ""
             finally:
                 record["seconds"] = round(time.time() - started, 2)
+            return record
 
-    def completed_task(index, record, password):
+    def completed_task(index, record):
         nonlocal completed
-        results[index - 1] = record
-        if password:
-            record["_generated_password"] = password
         with progress_lock:
             completed += 1
             if progress:
@@ -619,21 +612,12 @@ def _apply_actions_parallel(
 
     if progress:
         progress(offset, overall_total or total, "En cours")
-    with ThreadPoolExecutor(max_workers=min(workers, max(1, total))) as executor:
-        futures = {
-            executor.submit(task, index, item): index
-            for index, item in enumerate(actions, start=1)
-        }
-        for future in as_completed(futures):
-            index, record, password = future.result()
-            completed_task(index, record, password)
+    results = map_ordered(actions, task, workers, on_complete=completed_task)
 
     generated_passwords = {}
     counters = {"ok": 0, "failed": 0, "skipped": 0, "planned": 0}
     items = []
     for record in results:
-        if record is None:
-            continue
         password = record.pop("_generated_password", "")
         if password:
             generated_passwords[str(record.get("target", ""))] = password
@@ -648,17 +632,18 @@ def _apply_actions_parallel(
 
 def apply_plan(
     config: config_module.Config,
-    plan: Dict[str, Any],
+    plan: Plan,
     progress: Progress = None,
     cancel: Optional[threading.Event] = None,
     dry_run: bool = False,
     stop_on_error: bool = False,
-    options: Optional[Dict[str, Any]] = None,
+    options: Optional[PlanOptions] = None,
     kinds: Optional[Iterable[str]] = None,
     accounts: Optional[Iterable[str]] = None,
     parallelism: int = 1,
 ) -> Dict[str, Any]:
     """Execute the create/update actions of ``plan`` on the destination."""
+    validate_plan(plan)
     check_safety(config, plan)
     effective_options = plan_options_for_run(config, plan, options)
     _RUN_OPTIONS.value = effective_options
@@ -680,7 +665,7 @@ def apply_plan(
 
 def _apply_plan_inner(
     config: config_module.Config,
-    plan: Dict[str, Any],
+    plan: Plan,
     progress: Progress = None,
     cancel: Optional[threading.Event] = None,
     dry_run: bool = False,
@@ -714,9 +699,9 @@ def _apply_plan_inner(
         groups = {}
         for item in actions:
             groups.setdefault(action_sort_key(item)[0], []).append(item)
-        items = []
-        counters = {"ok": 0, "failed": 0, "skipped": 0, "planned": 0}
-        generated_passwords = {}
+        parallel_items = []
+        parallel_counters = {"ok": 0, "failed": 0, "skipped": 0, "planned": 0}
+        parallel_generated_passwords = {}
         offset = 0
         for order in sorted(groups):
             group = groups[order]
@@ -741,14 +726,22 @@ def _apply_plan_inner(
                     offset=offset,
                 )
             )
-            items.extend(group_items)
+            parallel_items.extend(group_items)
             for key, value in group_counters.items():
-                counters[key] = counters.get(key, 0) + value
-            generated_passwords.update(group_passwords)
+                parallel_counters[key] = (
+                    parallel_counters.get(key, 0) + value
+                )
+            parallel_generated_passwords.update(group_passwords)
             offset += len(group)
         return _finish_report(
-            config, plan, dry_run, stamp, total, counters, items,
-            generated_passwords,
+            config,
+            plan,
+            dry_run,
+            stamp,
+            total,
+            parallel_counters,
+            parallel_items,
+            parallel_generated_passwords,
         )
 
     items: List[Dict[str, Any]] = []
