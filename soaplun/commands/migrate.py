@@ -1,6 +1,7 @@
 """`migrate` sub-command."""
 
 import argparse
+from copy import copy
 
 from ..pipeline import (
     account_elements as _account_elements,
@@ -51,7 +52,7 @@ def add_parser(subparsers):
             "             filter banlist whitelist share sendas sendonbehalfof\n"
             "  resource : mail calendar folder share\n"
             "  dl       : members uniquement (une DL n'a ni dossiers, ni settings, ni partages)\n"
-            "  all      : account + resource + dl, avec CSV 'all'\n"
+            "  all      : account + resource + dl (CSV de comptes optionnel)\n"
             "\n"
             "Exemples:\n"
             "  soapalin migrate users.csv --type account --item mail,calendar,settings --from src1 --to dst1\n"
@@ -75,7 +76,7 @@ def add_parser(subparsers):
         "--item",
         required=True,
         metavar="ELEMENTS",
-        help="elements separes par des virgules, sans espace (ex. mail,calendar)",
+        help="elements separes par des virgules (ex. mail,calendar)",
     )
     _add_connection_options(parser)
     parser.add_argument(
@@ -135,12 +136,19 @@ def run(args):
         failures = 0
         account_elements = _account_elements(args.elements)
         resource_elements = _resource_elements(args.elements)
+        resource_args = args
+        dl_args = args
+        if str(args.csv).strip().lower() != "all":
+            resource_args = copy(args)
+            resource_args.csv = "all"
+            dl_args = copy(args)
+            dl_args.csv = "all"
         if account_elements:
             failures += _run_account(config, args, account_elements)
         if resource_elements:
-            failures += _run_resource(config, args, resource_elements)
+            failures += _run_resource(config, resource_args, resource_elements)
         if "members" in args.elements:
-            failures += _run_dl(config, args, ["members"])
+            failures += _run_dl(config, dl_args, ["members"])
         return 2 if failures else 0
     if args.type == "account":
         return _run_account(config, args, args.elements)

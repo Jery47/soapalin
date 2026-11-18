@@ -172,7 +172,8 @@ class CleanupPlanTests(unittest.TestCase):
                 return Mail()
 
         args = SimpleNamespace(
-            targets=["u@example.com", "share"],
+            targets=[],
+            share="u@example.com",
             type="account",
             to_label="dst1",
             from_label="",
@@ -217,7 +218,8 @@ class CleanupPlanTests(unittest.TestCase):
                 return Mail()
 
         args = SimpleNamespace(
-            targets=["u@example.com", "share"],
+            targets=[],
+            share="u@example.com",
             type="account",
             to_label="dst1",
             from_label="",

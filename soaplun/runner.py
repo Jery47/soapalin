@@ -237,7 +237,7 @@ def _run_create(
     )
     if not dry_run:
         cli._write_passwords(config, report)
-    return cli._print_summary("Provisioning", report)
+    return 2 if cli._print_summary("Provisioning", report) else 0
 
 
 def _copy_settings_parts(

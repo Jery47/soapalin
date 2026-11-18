@@ -47,8 +47,8 @@ soapalin migrate users.csv --type account --item mail,calendar,settings --from s
 soapalin job list
 soapalin clean --dry-run
 soapalin clean mailboxes --older-than 7
-soapalin clean all share --type account --to dst1 --dry-run
-soapalin clean users.csv share --type account --from src1 --to dst1
+soapalin clean --share --type account --to dst1 --dry-run
+soapalin clean --share users.csv --type account --from src1 --to dst1
 ```
 
 Les options globales (`--dry-run`, `--foreground`, `--directly-clean`, `-q`,
@@ -66,7 +66,7 @@ Les options globales (`--dry-run`, `--foreground`, `--directly-clean`, `-q`,
   - `account` : `mail calendar contacts tasks briefcase cos folder color settings tags filter banlist whitelist share sendas sendonbehalfof`
   - `resource` : `mail calendar folder share`
   - `dl` : `members` uniquement (une DL n'a ni dossier, ni settings, ni partage)
-  - `all` : combinaison account + resource + dl, avec CSV `all`
+  - `all` : combinaison account + resource + dl, CSV de comptes optionnel (ressources/DL en all)
 - Verifier le help apres toute modification du parser ou de la validation.
 
 ---

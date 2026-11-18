@@ -69,6 +69,7 @@ soaplun/schema.py          validation des artefacts
 
 ```bash
 soapalin server add src1 --role source
+soapalin server add src1 --role source --host zimbra-src.local --admin admin --password Secret! --no-test
 soapalin server add dst1 --role destination
 soapalin server list
 soapalin server show src1
@@ -76,6 +77,7 @@ soapalin server test src1
 soapalin server inventory src1
 soapalin server inventory src1 --no-stats
 soapalin server inventory src1 --no-stats --parallelism 4
+soapalin server inventory src1 --follow
 soapalin server rename src1 zimbra-prod
 soapalin server remove src1
 ```
@@ -92,8 +94,8 @@ ces fichiers pour renseigner les hôtes, ports, comptes admin et mots de passe.
 ```bash
 soapalin provision domains.csv --type domain --from src1 --to dst1
 soapalin provision all --type cos --from src1 --to dst1
-soapalin provision dl lists.csv --from src1 --to dst1
-soapalin provision resource resources.csv --from src1 --to dst1
+soapalin provision lists.csv --type dl --from src1 --to dst1
+soapalin provision resources.csv --type resource --from src1 --to dst1
 
 soapalin provision users.csv --type account --from src1 --to dst1 --password "Secret!"
 soapalin provision users.csv --type account --from src1 --to dst1 --password-file pwd.txt
@@ -130,7 +132,7 @@ dl       : members
 
 `--type` definit le type d'objet migre. `dl` n'accepte que `members` : une liste de distribution n'a ni dossiers, ni settings, ni partages.
 
-`--type all` exige le CSV `all`. Les tags manquants sont resynchronisés en mode
+`--type all` accepte un CSV de comptes : les comptes sont filtres, les ressources et DL sont traites en `all`. Les tags manquants sont resynchronisés en mode
 différentiel.
 
 L'?l?ment `cos` applique uniquement la COS source aux comptes d?j? existants.
@@ -197,7 +199,10 @@ défaut. La commande rend immédiatement la main et affiche l'identifiant du job
 
 ```bash
 soapalin job list
-soapalin job status 20261110-120305-29c057
+soapalin job list --running
+soapalin job list --failed
+soapalin job status 20261110-120305-29c057 --tail 30
+soapalin job log 20261110-120305-29c057
 soapalin job live
 soapalin job stop all
 ```
@@ -245,9 +250,9 @@ cours sont toujours conserves.
 Supprimer les mountpoints de partage d'un utilisateur, ou seulement ceux absents de la source :
 
 ```bash
-soapalin clean users.csv share --type account --to dst1 --dry-run
-soapalin clean all share --type account --to dst1 --parallelism 10
-soapalin clean users.csv share --type account --from src1 --to dst1
+soapalin clean --share users.csv --type account --to dst1 --dry-run
+soapalin clean --share --type account --to dst1 --parallelism 10
+soapalin clean --share users.csv --type account --from src1 --to dst1
 ```
 
 Sans `--from`, tous les mountpoints de partage des comptes s?lectionn?s sont supprim?s. Avec `--from`, seuls les mountpoints absents de la source sont supprim?s.

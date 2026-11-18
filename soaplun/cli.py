@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    account  : compte utilisateur (mail, settings, folders, shares...)\n"
             "    resource : ressource calendrier (mail, calendar, folder, share)\n"
             "    dl       : liste de distribution (members uniquement)\n"
-            "    all      : compte + ressource + dl (CSV obligatoirement 'all')\n"
+            "    all      : compte + ressource + dl (CSV de comptes optionnel)\n"
             "\n"
             "  Les elements doivent appartenir au type ; un element incompatible est ignore.\n"
             "\n"
@@ -126,7 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    soapalin migrate CSV|all --type {account,resource,dl,all} --item ELEMENTS --from SRC --to DST\n"
             "\n"
             "  Options :\n"
-            "    --item ELEMENTS                          Elements separes par des virgules, sans espace.\n"
+            "    --item ELEMENTS                          Elements separes par des virgules (espaces toleres).\n"
             "    --from LABEL --to LABEL                 Serveurs source et destination.\n"
             "    --mapping-domain CSV --mapping-host CSV  Correspondances de domaines et d'hotes.\n"
             "    --differential [YYYY-MM-DD]              Migration incrementale depuis une date.\n"
@@ -153,6 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  soapalin server test src1\n"
             "      Teste la connexion au serveur source.\n"
             "  soapalin server inventory src1 --no-stats --parallelism 4\n"
+            "  soapalin server inventory src1 --follow\n"
             "      Inventorie src1 sans GetMailbox, avec 4 comptes en parallele.\n"
             "\n"
             "  # Provisioning de la destination\n"
@@ -168,6 +169,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  # Migration des comptes\n"
             "  soapalin migrate users.csv --type account --item mail,calendar,settings --from src1 --to dst1\n"
             "      Copie mails, agendas et settings des comptes du CSV.\n"
+            "  soapalin migrate users.csv --type account --item 'mail, calendar' --from src1 --to dst1\n"
+            "      Les espaces autour des virgules sont toleres.\n"
             "  soapalin migrate users.csv --type account --item cos --from src1 --to dst1\n"
             "      Applique la COS source aux comptes deja existants.\n"
             "  soapalin migrate all --type account --item all --from src1 --to dst1\n"
@@ -190,15 +193,17 @@ def build_parser() -> argparse.ArgumentParser:
             "      Execute la migration dans le terminal au lieu d'un job.\n"
             "\n"
             "  # Jobs et nettoyage\n"
-            "  soapalin job list\n"
-            "      Liste les jobs.\n"
-            "  soapalin job status JOB_ID\n"
-            "      Affiche le statut et le journal d'un job.\n"
+            "  soapalin job list --running\n"
+            "      Liste les jobs actifs avec leur duree.\n"
+            "  soapalin job status JOB_ID --tail 30\n"
+            "      Affiche le statut et les 30 dernieres lignes du journal.\n"
+            "  soapalin job log JOB_ID\n"
+            "      Affiche le journal complet d'un job termine.\n"
             "  soapalin job live\n"
             "      Suit les logs en direct.\n"
             "  soapalin job stop all\n"
             "      Arrete tous les jobs actifs.\n"
-            "  soapalin clean all share --type account --to dst1 --dry-run\n"
+            "  soapalin clean --share --type account --to dst1 --dry-run\n"
             "      Simule la suppression des partages entrants sur dst1.\n"
         ),
     )
@@ -242,8 +247,6 @@ def validate(args, parser) -> None:
     if args.command == "migrate":
         if not args.type:
             parser.error("--type est obligatoire.")
-        if args.type == "all" and str(args.csv).strip().lower() != "all":
-            parser.error("--type all exige le CSV 'all'.")
         try:
             args.elements = normalize_migrate_elements(
                 args.type, parse_item_option(getattr(args, "item", "all"))
@@ -336,7 +339,7 @@ def _run_server_inventory(
     return 0
 
 
-def _launch_job(argv, args) -> int:
+def _launch_job(argv, args, follow: bool = False) -> int:
     config = config_module.Config()
     store = jobs_module.JobStore(config)
     arguments = list(argv) if argv is not None else list(sys.argv[1:])
@@ -352,6 +355,10 @@ def _launch_job(argv, args) -> int:
     _out("Statut  : soapalin job status %s" % spec["id"])
     _out("Suivi   : soapalin job live %s" % spec["id"])
     _out("Arret   : soapalin job stop %s" % spec["id"])
+    if follow:
+        return jobs_module.follow_jobs(
+            store, [store.state(spec["id"])], out=_out
+        )
     return 0
 
 
@@ -472,7 +479,9 @@ def main(argv: Optional[Sequence[str]] = None, _from_job: bool = False) -> int:
     from .commands import server as server_cmd
 
     if not _from_job and not args.foreground and _should_background(args):
-        return _launch_job(argv, args)
+        return _launch_job(
+            argv, args, follow=getattr(args, "follow", False)
+        )
 
     config = None
     try:

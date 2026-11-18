@@ -101,6 +101,13 @@ class CliHelperTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(apply.call_args.kwargs["parallelism"], 5)
 
+    def test_run_create_returns_partial_code(self):
+        with mock.patch.object(
+            cli, "apply_plan", return_value={"summary": {"failed": 1}}
+        ), mock.patch.object(cli, "_print_summary", return_value=1):
+            result = cli._run_create(mock.Mock(), {}, {}, [], True)
+        self.assertEqual(result, 2)
+
     def test_interrupt_report_is_written(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)
@@ -233,8 +240,8 @@ class NewCliParserTests(unittest.TestCase):
         args = self.parsed(
             [
                 "clean",
+                "--share",
                 "users.csv",
-                "share",
                 "--type",
                 "account",
                 "--to",
@@ -243,10 +250,14 @@ class NewCliParserTests(unittest.TestCase):
                 "5",
             ]
         )
-        self.assertEqual(args.targets, ["users.csv", "share"])
+        self.assertEqual(args.share, "users.csv")
         self.assertEqual(args.type, "account")
         self.assertEqual(args.to_label, "dst1")
         self.assertEqual(args.parallelism, 5)
+
+    def test_server_inventory_follow(self):
+        args = self.parsed(["server", "inventory", "src1", "--follow"])
+        self.assertTrue(args.follow)
 
     def test_server_inventory_no_stats(self):
         args = self.parsed(
@@ -377,23 +388,22 @@ class NewCliParserTests(unittest.TestCase):
             comma_args.elements, ["mail", "calendar", "settings"]
         )
 
-    def test_item_rejects_spaces(self):
-        with self.assertRaises(SystemExit) as context:
-            self.parsed(
-                [
-                    "migrate",
-                    "users.csv",
-                    "--type",
-                    "account",
-                    "--item",
-                    "mail, calendar",
-                    "--from",
-                    "src1",
-                    "--to",
-                    "dst1",
-                ]
-            )
-        self.assertEqual(context.exception.code, 2)
+    def test_item_tolerates_spaces(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "--type",
+                "account",
+                "--item",
+                "mail, calendar",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.elements, ["mail", "calendar"])
 
     def test_positional_elements_are_rejected(self):
         with self.assertRaises(SystemExit) as context:
@@ -605,21 +615,60 @@ class NewCliParserTests(unittest.TestCase):
         )
         self.assertEqual(args.elements, ["members"])
 
-    def test_type_all_requires_csv_all(self):
-        with self.assertRaises(SystemExit) as context:
-            self.parsed(
-                [
-                    "migrate",
-                    "users.csv",
-                    "--type",
-                    "all",
-                    "--from",
-                    "src1",
-                    "--to",
-                    "dst1",
-                ]
-            )
-        self.assertEqual(context.exception.code, 2)
+    def test_type_all_accepts_partial_csv(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "--type",
+                "all",
+                "--item",
+                "all",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        self.assertEqual(args.type, "all")
+        self.assertEqual(args.csv, "users.csv")
+
+    def test_type_all_uses_all_for_resources_and_dl(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "--type",
+                "all",
+                "--item",
+                "all",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+            ]
+        )
+        calls = []
+        with mock.patch.object(
+            cli.config_module, "Config", return_value=mock.Mock()
+        ), mock.patch.object(
+            migrate_cmd,
+            "_run_account",
+            side_effect=lambda config, args, elements: calls.append(("account", args.csv)) or 0,
+        ), mock.patch.object(
+            migrate_cmd,
+            "_run_resource",
+            side_effect=lambda config, args, elements: calls.append(("resource", args.csv)) or 0,
+        ), mock.patch.object(
+            migrate_cmd,
+            "_run_dl",
+            side_effect=lambda config, args, elements: calls.append(("dl", args.csv)) or 0,
+        ):
+            self.assertEqual(migrate_cmd.run(args), 0)
+        self.assertEqual(
+            calls,
+            [("account", "users.csv"), ("resource", "all"), ("dl", "all")],
+        )
 
     def test_json_requires_dry_run(self):
         with self.assertRaises(SystemExit) as context:
@@ -851,6 +900,59 @@ class NewCliParserTests(unittest.TestCase):
         self.assertEqual(calls, ["account", "resource", "dl"])
 
 
+class CliJobCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config = Config(self.tmp.name)
+        self.store = __import__("soaplun.jobs", fromlist=["JobStore"]).JobStore(self.config)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_job_list_duration_and_filter(self):
+        first = self.store.create(["migrate", "a.csv"])
+        second = self.store.create(["migrate", "b.csv"])
+        self.store.update(
+            first["id"],
+            status="succeeded",
+            started_at="2026-01-01T10:00:00",
+            finished_at="2026-01-01T10:04:12",
+        )
+        self.store.update(second["id"], status="failed")
+        output = io.StringIO()
+        args = SimpleNamespace(
+            job_command="list", job_id="all", status="failed", running=False, failed=False
+        )
+        with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["job", "list", "--failed"]), 0)
+        text = output.getvalue()
+        self.assertIn(second["id"], text)
+        self.assertNotIn(first["id"], text)
+        output = io.StringIO()
+        with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["job", "list"]), 0)
+        text = output.getvalue()
+        self.assertIn("DUREE", text)
+        self.assertIn("4m12s", text)
+
+    def test_job_status_tail_and_log(self):
+        spec = self.store.create(["migrate", "a.csv"])
+        path = self.store.log_path(spec["id"])
+        path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+        self.store.update(spec["id"], status="succeeded", started_at="2026-01-01T10:00:00", finished_at="2026-01-01T10:01:00")
+        output = io.StringIO()
+        with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
+            self.assertEqual(
+                cli.main(["job", "status", spec["id"], "--tail", "2"]), 0
+            )
+        self.assertIn("two", output.getvalue())
+        self.assertIn("three", output.getvalue())
+        output = io.StringIO()
+        with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["job", "log", spec["id"]]), 0)
+        self.assertEqual(output.getvalue().splitlines(), ["one", "two", "three"])
+
+
 class CliServerCommandTests(unittest.TestCase):
     def test_server_inventory_passes_no_stats(self):
         config = mock.Mock()
@@ -885,6 +987,37 @@ class CliServerCommandTests(unittest.TestCase):
             with mock.patch.object(cli.config_module, "Config", lambda: config):
                 self.assertEqual(cli.main(["server", "remove", "src2"]), 0)
             self.assertNotIn("src2", config.servers())
+
+    def test_server_add_connection_options(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            with mock.patch.object(cli.config_module, "Config", lambda: config):
+                self.assertEqual(
+                    cli.main(
+                        [
+                            "server",
+                            "add",
+                            "src1",
+                            "--role",
+                            "source",
+                            "--host",
+                            "zimbra-src.local",
+                            "--port",
+                            "7072",
+                            "--admin",
+                            "admin",
+                            "--password",
+                            "Secret!",
+                            "--no-test",
+                        ]
+                    ),
+                    0,
+                )
+            connection = config.server("src1")["connection"]
+            self.assertEqual(connection["store_host"], "zimbra-src.local")
+            self.assertEqual(connection["store_admin_port"], 7072)
+            self.assertEqual(connection["admin_login"], "admin")
+            self.assertEqual(connection["admin_password"], "Secret!")
 
     def test_quiet_suppresses_stdout(self):
         with tempfile.TemporaryDirectory() as tmp:

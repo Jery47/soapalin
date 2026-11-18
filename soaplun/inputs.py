@@ -72,15 +72,9 @@ def elements_for_type(kind: str) -> List[str]:
 
 
 def parse_item_option(value: str) -> List[str]:
-    text = str(value if value is not None else "all").strip()
-    if not text:
-        text = "all"
-    values = text.split(",")
-    if any(not part or part != part.strip() for part in values):
-        raise ValueError(
-            "--item attend des elements separes par des virgules, sans espace."
-        )
-    return values
+    raw = str(value if value is not None else "all")
+    values = [part.strip() for part in raw.split(",") if part.strip()]
+    return values or ["all"]
 
 
 def normalize_migrate_elements(

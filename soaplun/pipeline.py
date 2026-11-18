@@ -467,6 +467,10 @@ def run_provision_account(config, args) -> int:
         adminrights=args.keep_admin,
     )
     options = cli._base_options(config, run_options)
+    if not args.dry_run:
+        cli._validate_target_domains(
+            config, selected_users, options, args.to_label
+        )
     plan = cli._build_plan(
         config,
         selected_users,

@@ -11,21 +11,21 @@ def add_parser(subparsers):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Cibles locales : mailboxes (defaut), jobs, reports, snapshots, trash, all.\n"
-            "Cible distante : share (avec --type account et --to LABEL).\n"
+            "Cible distante : --share [CSV|all] (avec --type account et --to LABEL).\n"
             "\n"
             "Exemples:\n"
             "  soapalin clean --dry-run\n"
             "  soapalin clean mailboxes --older-than 7\n"
             "  soapalin clean all --older-than 30 --keep-last 5\n"
             "  soapalin clean snapshots --keep-last 10\n"
-            "  soapalin clean all share --type account --to dst1 --dry-run\n"
-            "  soapalin clean users.csv share --type account --from src1 --to dst1\n"
+            "  soapalin clean --share --type account --to dst1 --dry-run\n"
+            "  soapalin clean --share users.csv --type account --from src1 --to dst1\n"
         ),
     )
     parser.add_argument(
         "targets",
         nargs="*",
-        metavar="{mailboxes,jobs,reports,snapshots,trash,all,share}",
+        metavar="{mailboxes,jobs,reports,snapshots,trash,all}",
         default=[],
     )
     parser.add_argument(
@@ -47,6 +47,14 @@ def add_parser(subparsers):
         action="store_true",
         default=argparse.SUPPRESS,
         help="afficher ce qui serait supprime sans rien supprimer",
+    )
+    parser.add_argument(
+        "--share",
+        nargs="?",
+        const="all",
+        default=None,
+        metavar="CSV|all",
+        help="nettoyer les partages entrants sur la destination",
     )
     parser.add_argument(
         "--type",
@@ -72,7 +80,13 @@ def run(args):
 
     config = Config()
     targets = list(getattr(args, "targets", []) or [])
-    if "share" in [str(value).lower() for value in targets]:
+    if getattr(args, "share", None) is not None:
+        if targets:
+            cli._out(
+                "ERREUR : --share ne se combine pas avec une cible locale.",
+                file=sys.stderr,
+            )
+            return 2
         return _run_share_cleanup(args, config)
 
     try:
@@ -114,12 +128,11 @@ def _run_share_cleanup(args, config):
     from ..connections import ZimbraSession, describe_error
     from ..parallel import map_ordered
 
-    values = [
-        str(value).strip()
-        for value in (getattr(args, "targets", []) or [])
-        if str(value).strip()
-    ]
-    selected = [value for value in values if value.lower() != "share"]
+    share_value = getattr(args, "share", None)
+    if share_value is None:
+        cli._out("ERREUR : clean share exige --share CSV|all.", file=sys.stderr)
+        return 2
+    selected = [str(share_value).strip()]
     if len(selected) != 1:
         cli._out(
             "ERREUR : clean share exige un CSV ou 'all'.",
