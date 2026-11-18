@@ -20,7 +20,7 @@ from .settings_common import (
 
 
 def copy_signatures(source_settings: Dict[str, Any], destination, dry_run: bool) -> Dict[str, Any]:
-    result = {"created": 0, "skipped": 0, "errors": [], "id_map": {}}
+    result: Dict[str, Any] = {"created": 0, "skipped": 0, "errors": [], "id_map": {}}
     try:
         destination_signatures = [
             zobject_data(item) for item in destination.get_signatures()
@@ -69,7 +69,7 @@ def copy_signatures(source_settings: Dict[str, Any], destination, dry_run: bool)
 
 
 def copy_identities(source_settings: Dict[str, Any], destination, dry_run: bool) -> Dict[str, Any]:
-    result = {"created": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"created": 0, "skipped": 0, "errors": []}
     try:
         existing = {
             zobject_data(item).get("name")
@@ -108,7 +108,7 @@ def copy_preferences(
     options: Optional[Dict[str, Any]] = None,
     signature_id_map: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    result = {"updated": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"updated": 0, "skipped": 0, "errors": []}
     effective = options or config.sync()
     source_prefs = {
         name: value
@@ -171,7 +171,7 @@ def copy_account_attributes(
     ignore: Optional[List[str]] = None,
     keep_admin_permissions: bool = False,
 ) -> Dict[str, Any]:
-    result = {"updated": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"updated": 0, "skipped": 0, "errors": []}
     patterns = [str(name).strip() for name in (ignore or []) if str(name).strip()]
     source_attrs = source_settings.get("account_attrs") or {}
     wanted = []
@@ -248,7 +248,7 @@ def copy_cos(
     destination_email: str,
     dry_run: bool,
 ) -> Dict[str, Any]:
-    result = {"updated": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"updated": 0, "skipped": 0, "errors": []}
     cos_name = str(source_settings.get("cos_name") or "").strip()
     if not cos_name:
         result["skipped"] += 1
@@ -302,7 +302,7 @@ def copy_folder_colors(
     destination,
     dry_run: bool,
 ) -> Dict[str, Any]:
-    result = {"updated": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"updated": 0, "skipped": 0, "errors": []}
     source_folders = source_settings.get("folders") or []
     if not source_folders:
         return result
@@ -357,7 +357,7 @@ def copy_empty_folders(
     source_settings: Dict[str, Any], destination, dry_run: bool
 ) -> Dict[str, Any]:
     """Create missing source folders on the destination, without messages."""
-    result = {"created": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"created": 0, "skipped": 0, "errors": []}
     source_folders = (
         source_settings.get("all_folders")
         or source_settings.get("folders")
@@ -440,7 +440,7 @@ def copy_tags(
     destination,
     dry_run: bool,
 ) -> Dict[str, Any]:
-    result = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
     source_tags = source_settings.get("tags") or []
     if not source_tags:
         return result
@@ -533,7 +533,7 @@ def copy_filters(
     dry_run: bool,
     way: str = "in",
 ) -> Dict[str, Any]:
-    result = {"updated": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"updated": 0, "skipped": 0, "errors": []}
     key = "filters_in" if way == "in" else "filters_out"
     source_rules = [zobject_data(rule) for rule in source_settings.get(key, [])]
     if not source_rules:
@@ -581,7 +581,7 @@ def copy_filters(
 def copy_white_black_lists(
     source_settings: Dict[str, Any], destination, dry_run: bool
 ) -> Dict[str, Any]:
-    result = {"white_added": 0, "black_added": 0, "errors": []}
+    result: Dict[str, Any] = {"white_added": 0, "black_added": 0, "errors": []}
     try:
         dest_lists = destination.get_white_black_lists() or {}
     except Exception as exc:  # noqa: BLE001
@@ -676,7 +676,7 @@ def copy_outgoing_shares(
     destination_session: Optional[ZimbraSession] = None,
     destination_mail=None,
 ) -> Dict[str, Any]:
-    result = {
+    result: Dict[str, Any] = {
         "created": 0,
         "skipped": 0,
         "ignored": 0,
@@ -760,7 +760,7 @@ def copy_incoming_shares(
     destination_mail=None,
 ) -> Dict[str, Any]:
     """Mount shares already accepted on the source for the destination user."""
-    result = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
     source_shares = source_settings.get("mountpoints") or []
     if not source_shares:
         return result
@@ -804,7 +804,7 @@ def copy_incoming_shares(
                     str(link.get("path") or ""),
                 )
             ] = link
-    accepted = {}
+    accepted: Dict[Tuple[str, str], Tuple[int, Dict[str, Any]]] = {}
     for share in source_shares:
         # ``mid`` is present for a share that is already mounted/accepted.
         if not share.get("mid"):
@@ -931,7 +931,7 @@ def copy_incoming_shares(
         except Exception as exc:  # noqa: BLE001
             text = describe_error(exc).lower()
             if "already_exists" in text or "already exists" in text:
-                existing.add(key)
+                existing[mount_key] = {}
                 result["skipped"] += 1
             else:
                 result["errors"].append(
@@ -944,7 +944,7 @@ def copy_incoming_shares(
 def copy_permissions(
     source_settings: Dict[str, Any], destination, dry_run: bool
 ) -> Dict[str, Any]:
-    result = {"created": 0, "skipped": 0, "errors": []}
+    result: Dict[str, Any] = {"created": 0, "skipped": 0, "errors": []}
     source_aces = [ace for ace in as_list(source_settings.get("permissions")) if isinstance(ace, dict)]
     if not source_aces:
         return result

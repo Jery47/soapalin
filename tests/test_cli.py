@@ -920,9 +920,6 @@ class CliJobCommandTests(unittest.TestCase):
         )
         self.store.update(second["id"], status="failed")
         output = io.StringIO()
-        args = SimpleNamespace(
-            job_command="list", job_id="all", status="failed", running=False, failed=False
-        )
         with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
             self.assertEqual(cli.main(["job", "list", "--failed"]), 0)
         text = output.getvalue()

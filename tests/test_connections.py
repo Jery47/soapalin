@@ -1,8 +1,7 @@
 import ssl
+import tempfile
 import unittest
 import urllib.error
-
-import tempfile
 
 from soaplun.config import Config
 from soaplun.connections import ZimbraSession, describe_error

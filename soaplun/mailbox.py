@@ -1,91 +1,61 @@
 """Mailbox data copy (export/import) via zmmailbox or Zimbra REST."""
 
 import datetime
-import gzip
-import json
 import os
-import re
-import shutil
-import socket
-import subprocess
 import tarfile
 import threading
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from email.parser import BytesHeaderParser
-from email.utils import parseaddr
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
+from . import cleanup, storage
 from . import config as config_module
 from . import inventory as inventory_module
+from .cleanup import cleanup_archives, cleanup_partial_archives
 from .connections import ZimbraSession, describe_error, preflight
 from .inventory import now_iso
+from .mailbox_archive import (
+    _archive_base,
+    _collect_archive_entries,
+    _collect_archive_keys,
+    _normalize_duplicate_key,
+    _normalize_email,
+    backend_info,
+    check_zmmailbox_environment,
+    export_mailbox,
+    free_space,
+    import_mailbox,
+    is_local_host,
+    use_zmmailbox,
+    verify_archive,
+    zmmailbox_path,
+)
+from .mailbox_common import (
+    CONTENT_SPECS,
+    MailboxError,
+    Progress,
+    human_size,
+    normalize_content_types,
+    since_query,
+)
+from .parallel import map_ordered
 
-Progress = Optional[Callable[[int, int, str], None]]
-
-TGZ_MAGIC = b"\x1f\x8b"
-
-CONTENT_SPECS: Dict[str, Dict[str, str]] = {
-    "all": {
-        "label": "Tous les contenus",
-        "query": "is:anywhere",
-        "types": "",
-    },
-    "mail": {
-        "label": "Mails",
-        "query": "is:anywhere",
-        "types": "message",
-    },
-    "calendar": {
-        "label": "Agenda",
-        "query": "is:anywhere",
-        "types": "appointment",
-    },
-    "contacts": {
-        "label": "Contacts",
-        "query": "is:anywhere",
-        "types": "contact",
-    },
-    "tasks": {
-        "label": "Tâches",
-        "query": "is:anywhere",
-        "types": "task",
-    },
-    "briefcase": {
-        "label": "Briefcase",
-        "query": "is:anywhere",
-        "types": "document",
-    },
-}
+__all__ = [
+    "cleanup_archives",
+    "cleanup_partial_archives",
+    "backend_info",
+    "check_zmmailbox_environment",
+    "is_local_host",
+    "use_zmmailbox",
+    "zmmailbox_path",
+]
 
 
-def normalize_content_types(values: Optional[List[str]]) -> List[str]:
-    if values is None:
-        return ["all"]
-    if "all" in values:
-        return ["all"]
-    return [name for name in CONTENT_SPECS if name in values and name != "all"]
 
 
-def since_query(value: str) -> str:
-    """Convert an ISO date to the Zimbra ``date:>=`` search fragment."""
-    value = str(value or "").strip()
-    if not value:
-        return ""
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
-        try:
-            parsed = datetime.datetime.strptime(value, fmt)
-            return "date:>=%s" % parsed.strftime("%m/%d/%Y")
-        except ValueError:
-            continue
-    raise MailboxError(
-        "Date --since invalide : utilisez le format YYYY-MM-DD."
-    )
 
 
-class MailboxError(Exception):
-    pass
+
+
 
 
 # ----------------------------------------------------------------------
@@ -94,198 +64,27 @@ class MailboxError(Exception):
 _LOCAL_NAMES: Optional[set] = None
 
 
-def zmmailbox_path() -> str:
-    return shutil.which("zmmailbox") or ""
 
 
-def local_hostnames() -> set:
-    """Names that designate this machine, including the Zimbra mail host."""
-    global _LOCAL_NAMES
-    if _LOCAL_NAMES is not None:
-        return _LOCAL_NAMES
-    names = {
-        "localhost",
-        "127.0.0.1",
-        "::1",
-        socket.gethostname().lower(),
-        socket.getfqdn().lower(),
-    }
-    try:
-        _name, aliases, addresses = socket.gethostbyname_ex(socket.gethostname())
-        names.update(alias.lower() for alias in aliases)
-        names.update(address.lower() for address in addresses)
-    except OSError:
-        pass
-    binary = shutil.which("zmhostname")
-    if binary and os.name == "posix":
-        try:
-            result = subprocess.run(
-                [binary],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=10,
-                check=False,
-            )
-            value = result.stdout.decode("utf-8", "replace").strip().lower()
-            if value:
-                names.add(value)
-        except (OSError, subprocess.SubprocessError):
-            pass
-    names.discard("")
-    _LOCAL_NAMES = names
-    return names
 
 
-def is_local_host(host: str) -> bool:
-    """True when ``host`` points at the machine running this process."""
-    value = (host or "").strip().lower()
-    if not value:
-        return False
-    if value in local_hostnames():
-        return True
-    try:
-        return socket.gethostbyname(value).lower() in local_hostnames()
-    except OSError:
-        return False
 
 
-def use_zmmailbox(connection: Dict[str, Any]) -> bool:
-    """Decide whether ``zmmailbox`` can safely act on this server.
-
-    ``zmmailbox`` always talks to the *local* mailbox server.  Running an
-    export or import for an account hosted elsewhere would target the wrong
-    server, so the automatic mode only uses it when the configured host is
-    this machine.  An explicit ``zmmailbox`` mode still forces it for unusual
-    setups (for example a container that shares the mailbox store).
-    """
-    mode = (connection.get("zmmailbox_mode") or "auto").lower()
-    if mode == "rest":
-        return False
-    if os.name != "posix" or not zmmailbox_path():
-        return False
-    if mode == "zmmailbox":
-        return True
-    return is_local_host(config_module.store_host(connection))
 
 
-def backend_info(connection: Dict[str, Any]) -> Dict[str, Any]:
-    """Describe the backend that will be used for one side, with a reason."""
-    mode = (connection.get("zmmailbox_mode") or "auto").lower()
-    binary = zmmailbox_path()
-    if mode == "rest":
-        return {"backend": "rest", "reason": "mode REST forcé"}
-    if os.name != "posix":
-        reason = "zmmailbox nécessite Linux ; REST utilisé"
-        if mode == "zmmailbox":
-            reason = "mode zmmailbox demandé, mais zmmailbox nécessite Linux ; REST utilisé"
-        return {"backend": "rest", "reason": reason, "warning": mode == "zmmailbox"}
-    if not binary:
-        return {"backend": "rest", "reason": "zmmailbox introuvable"}
-    if mode == "zmmailbox":
-        return {
-            "backend": "zmmailbox",
-            "reason": "mode zmmailbox forcé",
-            "warning": not is_local_host(config_module.store_host(connection)),
-        }
-    if is_local_host(config_module.store_host(connection)):
-        return {"backend": "zmmailbox", "reason": "hôte local détecté"}
-    return {
-        "backend": "rest",
-        "reason": "hôte distant : zmmailbox agirait sur le mauvais serveur",
-    }
 
 
-def _run(
-    command: List[str],
-    stdout_path: Optional[Path] = None,
-    timeout: Optional[int] = None,
-    stdin_path: Optional[Path] = None,
-) -> Tuple[int, bytes, bytes]:
-    stdout_handle = None
-    stdin_handle = None
-    try:
-        if stdout_path is not None:
-            stdout_path.parent.mkdir(parents=True, exist_ok=True)
-            stdout_handle = stdout_path.open("wb")
-        if stdin_path is not None:
-            stdin_handle = stdin_path.open("rb")
-        process = subprocess.run(
-            command,
-            stdout=stdout_handle if stdout_handle else subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=stdin_handle if stdin_handle else subprocess.DEVNULL,
-            timeout=timeout,
-        )
-        return (
-            process.returncode,
-            process.stdout if process.stdout else b"",
-            process.stderr if process.stderr else b"",
-        )
-    finally:
-        if stdout_handle:
-            stdout_handle.close()
-        if stdin_handle:
-            stdin_handle.close()
 
 
-def check_zmmailbox_environment() -> Dict[str, Any]:
-    path = zmmailbox_path()
-    names = sorted(local_hostnames())
-    note = ""
-    if os.name == "nt":
-        note = "Windows : zmmailbox est absent ; les copies de boîtes utilisent REST."
-    return {
-        "available": bool(path),
-        "path": path,
-        "platform": os.name,
-        "user": _current_user(),
-        "usable": bool(path) and os.name == "posix",
-        "local_hosts": names[:20],
-        "note": note,
-    }
 
 
-def _current_user() -> str:
-    try:
-        import getpass
-
-        return getpass.getuser()
-    except Exception:  # noqa: BLE001
-        return ""
 
 
 # ----------------------------------------------------------------------
 # Verification helpers
 # ----------------------------------------------------------------------
-def verify_archive(path: Path, deep: bool = False) -> Dict[str, Any]:
-    """Verify that an export produced a plausible gzip/tar archive."""
-    if not path.exists():
-        raise MailboxError("Archive absente : %s" % path)
-    size = path.stat().st_size
-    if size == 0:
-        raise MailboxError("Archive vide : %s" % path)
-    with path.open("rb") as handle:
-        magic = handle.read(2)
-    if magic != TGZ_MAGIC:
-        raise MailboxError(
-            "Le fichier exporté n'est pas une archive gzip valide (%s)" % path
-        )
-    result: Dict[str, Any] = {"path": str(path), "size": size, "valid": True}
-    if deep:
-        import tarfile
-
-        count = 0
-        try:
-            with tarfile.open(path, "r|gz") as archive:
-                for _ in archive:
-                    count += 1
-        except Exception as exc:  # noqa: BLE001
-            raise MailboxError("Archive tar.gz corrompue : %s" % exc) from exc
-        result["members"] = count
-    return result
 
 
-HEADER_READ_LIMIT = 256 * 1024
 DUPLICATE_BATCH = 50
 
 
@@ -297,175 +96,28 @@ def _truthy(value: Any, default: bool = False) -> bool:
     return bool(value)
 
 
-def _normalize_duplicate_key(value: Any) -> str:
-    if isinstance(value, dict):
-        value = value.get("_content", "")
-    text = str(value or "").strip()
-    if text.startswith("<") and text.endswith(">"):
-        text = text[1:-1]
-    return " ".join(text.split()).lower()
 
 
-def _normalize_email(value: Any) -> str:
-    text = str(value or "").strip()
-    _name, address = parseaddr(text)
-    return _normalize_duplicate_key(address or text)
 
 
-def _message_id_from_bytes(data: bytes) -> str:
-    try:
-        message = BytesHeaderParser().parsebytes(data, headersonly=True)
-        return _normalize_duplicate_key(message.get("Message-ID", ""))
-    except Exception:  # noqa: BLE001 - malformed message is kept as-is
-        return ""
 
 
-def _metadata_payload(raw: bytes) -> Dict[str, Any]:
-    try:
-        payload = json.loads(raw.decode("utf-8", "replace"))
-    except (ValueError, TypeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
 
 
-def _metadata_text(raw: bytes) -> str:
-    return str(_metadata_payload(raw).get("metadata") or "")
 
 
-def _metadata_values(metadata: str, key: str) -> List[str]:
-    pattern = re.compile(r"%d:%s(\d+):" % (len(key), re.escape(key)))
-    values: List[str] = []
-    for match in pattern.finditer(metadata):
-        length = int(match.group(1))
-        value = metadata[match.end() : match.end() + length]
-        if len(value) == length and value:
-            values.append(value)
-    return values
 
 
-def _metadata_duplicate_keys(metadata: str, kind: str) -> Set[str]:
-    keys: Set[str] = set()
-    if kind in {"calendar", "tasks"}:
-        for uid in _metadata_values(metadata, "u"):
-            normalized = _normalize_duplicate_key(uid)
-            if normalized:
-                keys.add("uid:" + normalized)
-    elif kind == "contacts":
-        for name in ("email", "email2", "email3", "email4"):
-            for email in _metadata_values(metadata, name):
-                normalized = _normalize_email(email)
-                if normalized:
-                    keys.add("email:" + normalized)
-        for full_name in _metadata_values(metadata, "fullName"):
-            normalized = _normalize_duplicate_key(full_name)
-            if normalized:
-                keys.add("name:" + normalized)
-    return keys
 
 
-def _content_duplicate_keys(data: bytes, kind: str) -> Set[str]:
-    text = data.decode("utf-8", "replace")
-    keys: Set[str] = set()
-    if kind in {"calendar", "tasks"}:
-        for match in re.finditer(r"(?im)^UID:\s*(.+?)\s*$", text):
-            normalized = _normalize_duplicate_key(match.group(1))
-            if normalized:
-                keys.add("uid:" + normalized)
-    elif kind == "contacts":
-        for match in re.finditer(r"(?im)^EMAIL[^:]*:\s*(.+?)\s*$", text):
-            normalized = _normalize_email(match.group(1))
-            if normalized:
-                keys.add("email:" + normalized)
-    return keys
 
 
-def _archive_base(name: str) -> str:
-    value = str(name or "")
-    if value.endswith(".meta"):
-        value = value[:-5]
-    for suffix in (".eml", ".appt", ".task", ".vcf", ".ics"):
-        if value.endswith(suffix):
-            return value[: -len(suffix)]
-    return value
 
 
-def _archive_kind(name: str) -> str:
-    value = str(name or "")
-    content = value[:-5] if value.endswith(".meta") else value
-    lowered = content.lower()
-    if lowered.endswith(".eml"):
-        return "mail"
-    if lowered.endswith(".appt"):
-        return "calendar"
-    if lowered.endswith(".task"):
-        return "tasks"
-    if lowered.endswith(".vcf"):
-        return "contacts"
-    if lowered.endswith(".ics"):
-        return "calendar"
-    if value.endswith(".meta"):
-        return "contacts"
-    return ""
 
 
-def _collect_archive_entries(
-    archive: Path, content: str = "all"
-) -> Dict[str, Dict[str, Any]]:
-    entries: Dict[str, Dict[str, Any]] = {}
-    with tarfile.open(str(archive), "r|gz") as handle:
-        for member in handle:
-            if not member.isfile():
-                continue
-            kind = _archive_kind(member.name)
-            if not kind or (content != "all" and kind != content):
-                continue
-            base = _archive_base(member.name)
-            entry = entries.setdefault(
-                base, {"id": "", "size": 0, "keys": set(), "kind": kind}
-            )
-            if member.name.endswith(".meta"):
-                stream = handle.extractfile(member)
-                raw = stream.read() if stream is not None else b""
-                payload = _metadata_payload(raw)
-                item_id = payload.get("id")
-                if item_id not in {None, ""}:
-                    entry["id"] = str(item_id)
-                try:
-                    entry["size"] = int(payload.get("size") or 0)
-                except (TypeError, ValueError):
-                    entry["size"] = 0
-                if kind == "mail":
-                    continue
-                entry["keys"].update(
-                    _metadata_duplicate_keys(_metadata_text(raw), kind)
-                )
-            else:
-                stream = handle.extractfile(member)
-                data = (
-                    stream.read(HEADER_READ_LIMIT) if stream is not None else b""
-                )
-                if kind == "mail":
-                    message_id = _message_id_from_bytes(data)
-                    if message_id:
-                        entry["keys"].add("mail:" + message_id)
-                else:
-                    entry["keys"].update(_content_duplicate_keys(data, kind))
-    return entries
 
 
-def _collect_archive_keys(
-    archive: Path, content: str = "all"
-) -> Tuple[Dict[str, Set[str]], Set[str]]:
-    entries = _collect_archive_entries(archive, content=content)
-    keys_by_base = {
-        base: entry["keys"]
-        for base, entry in entries.items()
-        if entry["keys"]
-    }
-    kinds = {
-        entry["kind"] for entry in entries.values() if entry["keys"]
-    }
-    return keys_by_base, kinds
 
 
 def _search_items(value: Any) -> List[Dict[str, Any]]:
@@ -607,7 +259,7 @@ def _emit_progress(
     if not progress:
         return
     try:
-        progress(done, total, message, detail or {})
+        progress(done, total, message, detail or {})  # type: ignore[call-arg]
     except TypeError:
         progress(done, total, message)
 
@@ -847,202 +499,18 @@ def deduplicate_archive(
     }
 
 
-def human_size(value: Any) -> str:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return "?"
-    for unit in ("o", "Ko", "Mo", "Go", "To"):
-        if number < 1024 or unit == "To":
-            return "%.1f %s" % (number, unit)
-        number /= 1024
-    return "%.1f To" % number
 
 
 # ----------------------------------------------------------------------
 # Export / import
 # ----------------------------------------------------------------------
-def export_mailbox(
-    config: config_module.Config,
-    source: ZimbraSession,
-    email: str,
-    destination: Path,
-    progress: Progress = None,
-    query: Optional[str] = None,
-    content: str = "all",
-    body: Optional[int] = None,
-) -> Dict[str, Any]:
-    connection = config.connection("source")
-    spec = CONTENT_SPECS.get(content) or CONTENT_SPECS["all"]
-    if query is None and config is not None:
-        query = since_query(config.sync().get("since") or "")
-    query = query or spec.get("query") or "is:anywhere"
-    types = spec.get("types") or ""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    part = destination.with_suffix(destination.suffix + ".part")
-    if part.exists():
-        try:
-            part.unlink()
-        except OSError:
-            pass
-    started = time.time()
-
-    if use_zmmailbox(connection):
-        binary = zmmailbox_path()
-        rest_query = "//?fmt=tgz&meta=1&query=%s" % query
-        if types:
-            rest_query += "&types=%s" % types
-        if body is not None:
-            rest_query += "&body=%d" % int(body)
-        command = [
-            binary,
-            "-z",
-            "-m",
-            email,
-            "-t",
-            "0",
-            "getRestURL",
-            rest_query,
-        ]
-        code, _stdout, stderr = _run(
-            command,
-            stdout_path=part,
-            timeout=int(connection.get("read_timeout") or 300) * 20,
-        )
-        if code != 0:
-            message = stderr.decode("utf-8", "replace").strip()
-            raise MailboxError(
-                "zmmailbox export a échoué (%s) : %s" % (code, message[:800])
-            )
-    else:
-        token, _lifetime = source.auth_token(email)
-        rest = source.rest()
-        rest.timeout = max(
-            rest.timeout, int(connection.get("read_timeout") or 300) * 20
-        )
-        url = source.export_url(email, query=query, types=types)
-        if body is not None:
-            url += "&body=%d" % int(body)
-
-        def download_progress(done: int, total: Optional[int]) -> None:
-            if progress:
-                progress(done, total or 0, "Téléchargement de %s" % email)
-
-        rest.download(
-            url,
-            part,
-            auth_token=token,
-            progress=download_progress,
-            chunk_size=1024 * 1024,
-        )
-
-    if part.exists() and part.stat().st_size == 0:
-        try:
-            part.unlink()
-        except OSError:
-            pass
-        return {
-            "path": str(destination),
-            "size": 0,
-            "valid": True,
-            "empty": True,
-            "seconds": round(time.time() - started, 1),
-            "bytes": 0,
-            "backend": "zmmailbox" if use_zmmailbox(connection) else "rest",
-            "content": content,
-        }
-
-    info = verify_archive(part)
-    if part.exists():
-        os.replace(part, destination)
-    info["path"] = str(destination)
-    info["seconds"] = round(time.time() - started, 1)
-    info["bytes"] = destination.stat().st_size
-    info["backend"] = "zmmailbox" if use_zmmailbox(connection) else "rest"
-    info["content"] = content
-    return info
 
 
-def import_mailbox(
-    config: config_module.Config,
-    destination: ZimbraSession,
-    email: str,
-    archive: Path,
-    progress: Progress = None,
-    resolve: Optional[str] = None,
-) -> Dict[str, Any]:
-    connection = config.connection("destination")
-    resolve = (resolve or config.sync().get("mailbox_resolve") or "skip").lower()
-    if resolve not in {"skip", "mod"}:
-        raise MailboxError(
-            "Valeur resolve=%r interdite : utilisez « skip » ou « mod »." % resolve
-        )
-    if not archive.exists():
-        raise MailboxError("Archive introuvable : %s" % archive)
-    started = time.time()
-
-    if use_zmmailbox(connection):
-        binary = zmmailbox_path()
-        command = [
-            binary,
-            "-z",
-            "-m",
-            email,
-            "-t",
-            "0",
-            "postRestURL",
-            "//?fmt=tgz&resolve=%s" % resolve,
-            str(archive),
-        ]
-        code, stdout, stderr = _run(
-            command,
-            timeout=int(connection.get("read_timeout") or 300) * 20,
-        )
-        output = (stdout + b"\n" + stderr).decode("utf-8", "replace").strip()
-        if code != 0:
-            raise MailboxError(
-                "zmmailbox import a échoué (%s) : %s" % (code, output[:1200])
-            )
-    else:
-        token, _lifetime = destination.auth_token(email)
-        rest = destination.rest()
-        rest.timeout = max(
-            rest.timeout, int(connection.get("read_timeout") or 300) * 20
-        )
-        url = destination.import_url(email, resolve=resolve)
-
-        def upload_progress(done: int, total: Optional[int]) -> None:
-            if progress:
-                progress(done, total or 0, "Envoi de %s" % email)
-
-        status, body = rest.upload(
-            url,
-            archive,
-            auth_token=token,
-            progress=upload_progress,
-            chunk_size=1024 * 1024,
-        )
-        if status >= 400:
-            raise MailboxError(
-                "Import REST HTTP %s pour %s : %s" % (status, email, body[:1200])
-            )
-        output = body[:1200]
-
-    return {
-        "seconds": round(time.time() - started, 1),
-        "resolve": resolve,
-        "output": output[-800:],
-    }
 
 
 # ----------------------------------------------------------------------
 # Orchestration
 # ----------------------------------------------------------------------
-def free_space(path: Path) -> int:
-    try:
-        return shutil.disk_usage(str(path)).free
-    except OSError:
-        return 0
 
 
 def _account_exists(session: ZimbraSession, email: str) -> bool:
@@ -1322,15 +790,12 @@ def copy_mailboxes(
         content_types if content_types is not None else sync.get("content_types")
     )
     contents = normalize_content_types(raw_contents)
-    since = since_query(sync.get("since") or "")
     resolve = (sync.get("mailbox_resolve") or "skip").lower()
     skip_duplicates = _truthy(sync.get("skip_duplicates"), True)
     if skip_duplicates and resolve != "skip":
         resolve = "skip"
-
-    source_host = config_module.store_host(config.connection("source"))
-    destination_host = config_module.store_host(config.connection("destination"))
-    
+    directly_clean = bool(sync.get("directly_clean", False))
+    resume = bool(sync.get("resume", False))
 
     check = preflight(config, ("source", "destination"))
     if not check.get("ok"):
@@ -1342,14 +807,38 @@ def copy_mailboxes(
             "Préflight impossible avant la copie des boîtes : " + " | ".join(details)
         )
 
-    storage = config.storage_path("mailbox_path")
+    mailbox_storage = config.storage_path("mailbox_path")
     try:
         cleanup_archives(config, int(sync.get("keep_tgz_days") or 0))
     except Exception:  # noqa: BLE001 - maintenance must never block a copy
         pass
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = storage / ("run-" + stamp)
-    run_dir.mkdir(parents=True, exist_ok=True)
+
+    run_dir: Optional[Path] = None
+    completed: Set[str] = set()
+    failed: Set[str] = set()
+    if resume:
+        run_dir = _latest_run_dir(mailbox_storage, config.current_profile())
+        if run_dir is not None:
+            checkpoint = _load_checkpoint(run_dir)
+            completed = {
+                str(value).lower()
+                for value in checkpoint.get("completed", [])
+            }
+            failed = {
+                str(value).lower() for value in checkpoint.get("failed", [])
+            }
+            if progress:
+                progress(
+                    0,
+                    1,
+                    "Reprise de %s (%d compte(s) deja termine(s))"
+                    % (run_dir, len(completed)),
+                )
+    if run_dir is None:
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        run_dir = mailbox_storage / ("run-" + stamp)
+        run_dir.mkdir(parents=True, exist_ok=True)
+    _register_run_dir(config, run_dir)
 
     source = ZimbraSession(config, "source", readonly=True)
     destination = ZimbraSession(config, "destination", readonly=False)
@@ -1363,6 +852,13 @@ def copy_mailboxes(
             for item in selected
             if item.get("source", "").lower() in wanted
             or item.get("destination", "").lower() in wanted
+        ]
+    requested_total = len(selected)
+    if completed:
+        selected = [
+            item
+            for item in selected
+            if item.get("source", "").lower() not in completed
         ]
 
     total = len(selected)
@@ -1568,21 +1064,47 @@ def copy_mailboxes(
             )
             counters["failed"] += 1
         finally:
-            if not keep_archives and record.get("status") == "ok":
-                for archive in archives:
-                    try:
-                        archive.unlink()
-                    except OSError:
-                        pass
-                record["archive"] = ""
+            if record.get("status") == "ok":
+                if directly_clean:
+                    moved = cleanup.move_account_archives(
+                        config, run_dir, source_email
+                    )
+                    for content in record.get("contents", []):
+                        for key in ("archive", "import_archive"):
+                            old = content.get(key)
+                            if old in moved:
+                                content[key] = moved[old]
+                    record["trash"] = sorted(moved.values())
+                    record["archive"] = ""
+                elif not keep_archives:
+                    for archive in archives:
+                        try:
+                            archive.unlink()
+                        except OSError:
+                            pass
+                    record["archive"] = ""
             record["finished_at"] = now_iso()
             items.append(record)
+            if record.get("status") == "ok":
+                completed.add(source_email.lower())
+            elif record.get("status") == "failed":
+                failed.add(source_email.lower())
+            _write_checkpoint(
+                run_dir,
+                completed,
+                failed,
+                requested_total,
+                config.current_profile(),
+            )
             if progress:
                 progress(
                     index,
                     total,
                     "%s : %s" % (target_email, record.get("status", "?")),
                 )
+
+    if not failed and len(completed) >= requested_total:
+        _clear_checkpoint(run_dir)
 
     report = {
         "created_at": now_iso(),
@@ -1615,7 +1137,9 @@ def _destination_has_kind(client: Any, kind: str) -> bool:
     search = STRUCTURED_SEARCH.get(kind)
     if not search:
         return False
-    return next(_search_pages(client, search[0], search[1]), None) is not None
+    for _ in _search_pages(client, search[0], search[1]):
+        return True
+    return False
 
 
 def _entry_keys(entries: Iterable[Dict[str, Any]]) -> Set[str]:
@@ -2135,6 +1659,7 @@ def _copy_incremental_account(
     total: int,
     compare_destination: bool,
     since: str = "",
+    directly_clean: bool = False,
 ) -> Dict[str, Any]:
     source_email = item.get("source", "")
     target_email = item.get("destination", "")
@@ -2266,13 +1791,25 @@ def _copy_incremental_account(
             }
         )
     finally:
-        if not keep_archives and record.get("status") == "ok":
-            for archive in archives:
-                try:
-                    archive.unlink()
-                except OSError:
-                    pass
-            record["archive"] = ""
+        if record.get("status") == "ok":
+            if directly_clean:
+                moved = cleanup.move_account_archives(
+                    config, run_dir, source_email
+                )
+                for content in record.get("contents", []):
+                    for key in ("archive", "import_archive"):
+                        old = content.get(key)
+                        if old in moved:
+                            content[key] = moved[old]
+                record["trash"] = sorted(moved.values())
+                record["archive"] = ""
+            elif not keep_archives:
+                for archive in archives:
+                    try:
+                        archive.unlink()
+                    except OSError:
+                        pass
+                record["archive"] = ""
         record["finished_at"] = now_iso()
     return record
 
@@ -2290,8 +1827,9 @@ def _run_account_tasks(
     contents: List[str],
     compare_destination: bool,
     since: str = "",
+    directly_clean: bool = False,
+    checkpoint: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
-    results: List[Optional[Dict[str, Any]]] = [None] * total
     profile_id = config.current_profile()
     local = threading.local()
     progress_lock = threading.Lock()
@@ -2321,6 +1859,7 @@ def _run_account_tasks(
         with config.profile_context(profile_id):
             source, destination = sessions()
             try:
+                extra = {"directly_clean": True} if directly_clean else {}
                 return worker(
                     config,
                     item,
@@ -2335,6 +1874,7 @@ def _run_account_tasks(
                     total,
                     compare_destination,
                     since,
+                    **extra,
                 )
             except Exception as exc:  # noqa: BLE001 - keep other accounts running
                 return {
@@ -2347,9 +1887,22 @@ def _run_account_tasks(
 
     def completed_task(index: int, record: Dict[str, Any]) -> None:
         nonlocal completed
-        results[index - 1] = record
         with progress_lock:
             completed += 1
+            if checkpoint is not None:
+                account = str(record.get("source") or "").lower()
+                status = record.get("status")
+                if account and status == "ok":
+                    checkpoint["completed"].add(account)
+                elif account and status == "failed":
+                    checkpoint["failed"].add(account)
+                _write_checkpoint(
+                    checkpoint["run_dir"],
+                    checkpoint["completed"],
+                    checkpoint["failed"],
+                    checkpoint["total"],
+                    checkpoint.get("profile", ""),
+                )
             if progress:
                 progress(
                     completed,
@@ -2363,19 +1916,9 @@ def _run_account_tasks(
                     ),
                 )
 
-    if parallelism <= 1 or total <= 1:
-        for index, item in enumerate(selected, start=1):
-            completed_task(index, task(index, item))
-    else:
-        with ThreadPoolExecutor(
-            max_workers=min(parallelism, max(1, total))
-        ) as executor:
-            futures = {
-                executor.submit(task, index, item): index
-                for index, item in enumerate(selected, start=1)
-            }
-            for future in as_completed(futures):
-                completed_task(futures[future], future.result())
+    results = map_ordered(
+        selected, task, parallelism, on_complete=completed_task
+    )
     return [record or {} for record in results]
 
 
@@ -2412,6 +1955,8 @@ def copy_mailboxes_incremental(
     )
     contents = normalize_content_types(raw_contents)
     since = since_query(sync.get("since") or "")
+    directly_clean = bool(sync.get("directly_clean", False))
+    resume = bool(sync.get("resume", False))
     if "all" in contents and compare_destination:
         return copy_mailboxes(
             config,
@@ -2424,10 +1969,6 @@ def copy_mailboxes_incremental(
             content_types=raw_contents,
         )
 
-    source_host = config_module.store_host(config.connection("source"))
-    destination_host = config_module.store_host(config.connection("destination"))
-    
-
     check = preflight(config, ("source", "destination"))
     if not check.get("ok"):
         details = []
@@ -2439,14 +1980,38 @@ def copy_mailboxes_incremental(
             + " | ".join(details)
         )
 
-    storage = config.storage_path("mailbox_path")
+    mailbox_storage = config.storage_path("mailbox_path")
     try:
         cleanup_archives(config, int(sync.get("keep_tgz_days") or 0))
     except Exception:  # noqa: BLE001 - maintenance must never block a copy
         pass
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = storage / ("run-" + stamp)
-    run_dir.mkdir(parents=True, exist_ok=True)
+
+    run_dir: Optional[Path] = None
+    completed: Set[str] = set()
+    failed: Set[str] = set()
+    if resume:
+        run_dir = _latest_run_dir(mailbox_storage, config.current_profile())
+        if run_dir is not None:
+            checkpoint = _load_checkpoint(run_dir)
+            completed = {
+                str(value).lower()
+                for value in checkpoint.get("completed", [])
+            }
+            failed = {
+                str(value).lower() for value in checkpoint.get("failed", [])
+            }
+            if progress:
+                progress(
+                    0,
+                    1,
+                    "Reprise de %s (%d compte(s) deja termine(s))"
+                    % (run_dir, len(completed)),
+                )
+    if run_dir is None:
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        run_dir = mailbox_storage / ("run-" + stamp)
+        run_dir.mkdir(parents=True, exist_ok=True)
+    _register_run_dir(config, run_dir)
 
     selected = plan.get("mailboxes", [])
     if only:
@@ -2456,6 +2021,13 @@ def copy_mailboxes_incremental(
             for item in selected
             if item.get("source", "").lower() in wanted
             or item.get("destination", "").lower() in wanted
+        ]
+    requested_total = len(selected)
+    if completed:
+        selected = [
+            item
+            for item in selected
+            if item.get("source", "").lower() not in completed
         ]
 
     total = len(selected)
@@ -2477,7 +2049,17 @@ def copy_mailboxes_incremental(
         contents,
         compare_destination,
         since,
+        directly_clean,
+        checkpoint={
+            "run_dir": run_dir,
+            "profile": config.current_profile(),
+            "completed": completed,
+            "failed": failed,
+            "total": requested_total,
+        },
     )
+    if not failed and len(completed) >= requested_total:
+        _clear_checkpoint(run_dir)
     counters = {"ok": 0, "failed": 0, "skipped": 0}
     for record in items:
         status = record.get("status")
@@ -2540,54 +2122,77 @@ def copy_mailboxes_chunked(
 
 
 def _safe_filename(email: str) -> str:
-    return "".join(
-        char if char.isalnum() or char in "@._-" else "_" for char in email
-    )
+    return cleanup.safe_filename(email)
+
+
+def _register_run_dir(config: config_module.Config, run_dir: Path) -> None:
+    """Record the active run directory in the background job state."""
+    job_id = os.environ.get("SOAPLUN_JOB_ID", "")
+    if not job_id:
+        return
+    try:
+        from .jobs import JobStore
+
+        JobStore(config).update(job_id, run_dir=str(run_dir))
+    except (KeyError, OSError, ValueError):
+        pass
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=1)
-        handle.write("\n")
+    storage.write_json_atomic(path, payload, indent=1)
 
 
-def cleanup_partial_archives(config: config_module.Config) -> List[str]:
-    """Remove interrupted .part/.tmp archives from mailbox run directories."""
-    removed: List[str] = []
-    storage = config.storage_path("mailbox_path")
-    if not storage.exists():
-        return removed
-    for pattern in ("run-*/*.part", "run-*/*.tmp", "run-*/**/*.part"):
-        for path in storage.glob(pattern):
-            try:
-                path.unlink()
-                removed.append(str(path))
-            except OSError:
-                continue
-    return removed
+CHECKPOINT_NAME = "checkpoint.json"
 
 
-def cleanup_archives(config: config_module.Config, older_than_days: int) -> List[str]:
-    """Delete mailbox archives older than ``older_than_days``. Returns paths."""
-    removed: List[str] = []
-    if older_than_days <= 0:
-        return removed
-    cutoff = time.time() - older_than_days * 86400
-    storage = config.storage_path("mailbox_path")
-    if not storage.exists():
-        return removed
-    for path in storage.glob("run-*/*.tgz"):
-        try:
-            if path.stat().st_mtime < cutoff:
-                path.unlink()
-                removed.append(str(path))
-        except OSError:
+def _checkpoint_path(run_dir: Path) -> Path:
+    return run_dir / CHECKPOINT_NAME
+
+
+def _load_checkpoint(run_dir: Path) -> Dict[str, Any]:
+    return storage.read_json(_checkpoint_path(run_dir))
+
+
+def _write_checkpoint(
+    run_dir: Path,
+    completed: Set[str],
+    failed: Set[str],
+    total: int,
+    profile: str = "",
+) -> None:
+    storage.write_json_atomic(
+        _checkpoint_path(run_dir),
+        {
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+            "run_dir": str(run_dir),
+            "profile": profile,
+            "completed": sorted(completed),
+            "failed": sorted(failed),
+            "total": int(total),
+        },
+        indent=1,
+    )
+
+
+def _clear_checkpoint(run_dir: Path) -> None:
+    try:
+        _checkpoint_path(run_dir).unlink()
+    except OSError:
+        pass
+
+
+def _latest_run_dir(root: Path, profile: str = "") -> Optional[Path]:
+    candidates = sorted(
+        (path for path in root.glob("run-*") if path.is_dir()),
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    for path in candidates:
+        if not _checkpoint_path(path).exists():
             continue
-    for directory in storage.glob("run-*"):
-        try:
-            if directory.is_dir() and not any(directory.iterdir()):
-                directory.rmdir()
-        except OSError:
+        checkpoint = _load_checkpoint(path)
+        if profile and checkpoint.get("profile") not in ("", None, profile):
             continue
-    return removed
+        return path
+    return candidates[0] if candidates else None

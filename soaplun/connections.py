@@ -8,9 +8,7 @@ import urllib.error
 import urllib.parse
 from typing import Any, Dict, Iterable, Optional, Tuple
 
-from . import config as config_module
-from .rest import RestClient, RestError, build_ssl_context
-
+from zimsoap import zobjects
 from zimsoap.client import (
     ZimbraAccountClient,
     ZimbraAdminClient,
@@ -18,7 +16,9 @@ from zimsoap.client import (
     ZimbraSoapServerError,
     ZimbraSoapUnexpectedResponse,
 )
-from zimsoap import zobjects
+
+from . import config as config_module
+from .rest import RestClient, RestError, build_ssl_context
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +240,7 @@ class ZimbraSession:
         self.config = config
         self.side = side
         self.readonly = readonly
-        # ``connection`` lets the UI test unsaved form values without touching
+        # ``connection`` lets callers test unsaved values without touching
         # the stored configuration.
         self.connection = dict(connection) if connection is not None else config.connection(side)
         self._admin: Optional[ZimbraAdminClient] = None
@@ -500,8 +500,8 @@ def test_connection(
 ) -> Dict[str, Any]:
     """Test one side without raising: always returns a dict with ``ok``.
 
-    ``overrides`` carries unsaved form values so the "Tester la connexion"
-    button works before the configuration is saved.
+    ``overrides`` carries unsaved values so a connection test can run
+    before the configuration is saved.
     """
     if readonly is None:
         readonly = side == "source"
@@ -509,7 +509,7 @@ def test_connection(
     session = ZimbraSession(config, side, readonly=readonly, connection=connection)
     try:
         return session.test()
-    except Exception as exc:  # noqa: BLE001 - reported to the UI
+    except Exception as exc:  # noqa: BLE001 - reported to the caller
         return {
             "ok": False,
             "side": side,

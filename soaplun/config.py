@@ -2,15 +2,17 @@
 
 import base64
 import copy
-import fnmatch
+import datetime
 import json
 import os
-import tempfile
+import shutil
 import threading
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Union
+
+from . import mapping, storage
 
 try:  # pragma: no cover - exercised when cryptography is installed
     from cryptography.fernet import Fernet, InvalidToken
@@ -192,6 +194,7 @@ DEFAULTS: Dict[str, Any] = {
         "report_path": "data/reports",
         "snapshot_path": "data/snapshots",
         "job_path": "data/jobs",
+        "trash_path": "data/trash",
     },
 }
 
@@ -251,7 +254,7 @@ class Config:
 
     Secrets are encrypted with Fernet when :mod:`cryptography` is available.
     A local key is generated next to the configuration file.  The fallback is
-    deliberately obvious (``plain:`` prefix) so the UI can warn about it.
+    deliberately obvious (``plain:`` prefix) so callers can warn about it.
     """
 
     SECRET_PATHS = (
@@ -269,16 +272,42 @@ class Config:
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.servers_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self._runtime_profiles = set()
+        self._runtime_profiles: set = set()
         self._fernet = self._load_fernet()
         self._local = threading.local()
-        raw = self._migrate_raw(self._read_json(self.config_path))
+        raw_before = storage.read_json_or_none(self.config_path)
+        corrupt = raw_before is None
+        if corrupt:
+            self._backup_corrupt_config()
+            raw_before = {}
+        raw = self._migrate_raw(raw_before or {})
+        needs_save = (
+            corrupt
+            or not self.config_path.exists()
+            or raw is not raw_before
+        )
         self.data = deep_merge(DEFAULTS, raw)
+        before = copy.deepcopy(self.data)
         self._normalize_profiles()
         self._migrate_attr_ignore_defaults()
+        if self.data != before:
+            needs_save = True
         self._decrypt_secrets()
         self._ensure_storage_dirs()
-        self.save()
+        if needs_save:
+            self.save()
+
+    def _backup_corrupt_config(self) -> None:
+        if not self.config_path.exists():
+            return
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = self.config_path.with_name(
+            self.config_path.name + ".bak-" + stamp
+        )
+        try:
+            shutil.copy2(self.config_path, backup)
+        except OSError:
+            pass
 
     def _migrate_raw(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(raw, dict):
@@ -367,35 +396,12 @@ class Config:
     # Persistence
     # ------------------------------------------------------------------
     def _read_json(self, path: Path) -> Dict[str, Any]:
-        if not path.exists():
-            return {}
-        try:
-            with path.open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-            return payload if isinstance(payload, dict) else {}
-        except (OSError, ValueError):
-            return {}
+        return storage.read_json(path)
 
     def _write_json_atomic(self, path: Path, payload: Dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
+        storage.write_json_atomic(
+            path, payload, indent=2, sort_keys=True, mode=0o600
         )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
-                handle.write("\n")
-            os.replace(tmp_name, path)
-            try:
-                os.chmod(path, 0o600)
-            except OSError:
-                pass
-        finally:
-            try:
-                if os.path.exists(tmp_name):
-                    os.unlink(tmp_name)
-            except OSError:
-                pass
 
     def _load_fernet(self):
         if Fernet is None:
@@ -407,11 +413,7 @@ class Config:
             except (OSError, ValueError):
                 pass
         key = Fernet.generate_key()
-        self.key_path.write_bytes(key)
-        try:
-            os.chmod(self.key_path, 0o600)
-        except OSError:
-            pass
+        storage.write_bytes_atomic(self.key_path, key, mode=0o600)
         return Fernet(key)
 
     def save(self) -> None:
@@ -435,7 +437,13 @@ class Config:
         self._ensure_storage_dirs()
 
     def _ensure_storage_dirs(self) -> None:
-        for key in ("mailbox_path", "report_path", "snapshot_path", "job_path"):
+        for key in (
+            "mailbox_path",
+            "report_path",
+            "snapshot_path",
+            "job_path",
+            "trash_path",
+        ):
             raw = self.data.get("storage", {}).get(key)
             if not raw:
                 continue
@@ -621,11 +629,6 @@ class Config:
     def use_server(self, label: str) -> str:
         server = self.server(label)
         profile_id = label
-        if profile_id in self.profiles() and profile_id not in self._runtime_profiles:
-            raise ValueError(
-                "Le label serveur %s entre en conflit avec une configuration existante."
-                % label
-            )
         if profile_id in self.profiles() and profile_id not in self._runtime_profiles:
             raise ValueError(
                 "Le label serveur %s entre en conflit avec une configuration existante."
@@ -829,21 +832,17 @@ class Config:
     # Mapping helpers
     # ------------------------------------------------------------------
     def map_domain(self, domain: str) -> str:
-        mapping = self.sync().get("domain_map") or {}
-        normalized = {str(key).lower(): value for key, value in mapping.items()}
-        return normalized.get(str(domain).lower(), domain) or domain
+        return mapping.map_domain(self.sync().get("domain_map"), domain)
 
     def map_email(self, email: str) -> str:
-        if not email or "@" not in email:
-            return email
-        local, domain = email.rsplit("@", 1)
-        return "%s@%s" % (local, self.map_domain(domain))
+        return mapping.map_email(self.sync().get("domain_map"), email)
 
     def map_host(self, host: str) -> str:
-        mapping = self.sync().get("mail_host_map") or {}
-        normalized = {str(key).lower(): value for key, value in mapping.items()}
-        default = self.sync().get("default_mail_host") or ""
-        return normalized.get(str(host).lower()) or default or host
+        return mapping.map_host(
+            self.sync().get("mail_host_map"),
+            self.sync().get("default_mail_host") or "",
+            host,
+        )
 
     def ignored_attr(self, name: str, kind: str = "account") -> bool:
         if kind == "domain":
@@ -858,11 +857,11 @@ class Config:
             if name in ALWAYS_IGNORE_ATTRS:
                 return True
             patterns = self.sync().get("attr_ignore") or DEFAULT_ATTR_IGNORE
-        return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+        return mapping.matches(name, patterns)
 
     def ignored_pref(self, name: str) -> bool:
         patterns = self.sync().get("pref_ignore") or DEFAULT_PREF_IGNORE
-        return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+        return mapping.matches(name, patterns)
 
     # ------------------------------------------------------------------
     # Form helpers

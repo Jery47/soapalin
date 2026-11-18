@@ -443,7 +443,7 @@ def check_safety(
 
 
 def _action_in_accounts(
-    item: Dict[str, Any], accounts: Optional[set]
+    item: Any, accounts: Optional[set]
 ) -> bool:
     if accounts is None:
         return True
@@ -469,7 +469,7 @@ def plan_options_for_run(
         effective.update(overrides)
     encrypted = effective.get("fixed_password_encrypted") or ""
     if encrypted:
-        effective["fixed_password"] = config.decrypt_secret(encrypted)
+        effective["fixed_password"] = config.decrypt_secret(str(encrypted))
     elif not isinstance(effective.get("fixed_password"), str):
         effective["fixed_password"] = ""
     return effective
@@ -696,7 +696,7 @@ def _apply_plan_inner(
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     workers = max(1, int(parallelism or 1))
     if workers > 1 and total > 1 and not dry_run and not stop_on_error:
-        groups = {}
+        groups: Dict[int, List[Any]] = {}
         for item in actions:
             groups.setdefault(action_sort_key(item)[0], []).append(item)
         parallel_items = []

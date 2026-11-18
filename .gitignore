@@ -5,6 +5,11 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+.mypy_cache/
 
 # Virtual environments
 .venv/
@@ -31,3 +36,5 @@ Thumbs.db
 /all_user.csv
 /christophe.csv
 /thierry.csv
+# Local CSV inputs
+/*.csv

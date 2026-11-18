@@ -23,7 +23,6 @@ from .inventory_store import (
     write_snapshot,
     write_snapshot_index,
 )
-from .models import Snapshot
 from .parallel import map_ordered
 
 __all__ = [
@@ -359,7 +358,7 @@ def _domain_entries(
             search_types = _SEARCH_TYPES.get(command)
             if search_types:
                 try:
-                    entries.extend(_search_by_mail_domain(session, search_types, name))
+                    entries.extend(_search_by_mail_domain(session, search_types, str(name)))
                     continue
                 except Exception as fallback_exc:  # noqa: BLE001
                     exc = fallback_exc
@@ -439,7 +438,7 @@ def collect_accounts(
                 progress(completed, total, candidates[index - 1])
 
     return map_ordered(
-        candidates, task, parallelism, on_complete=completed_task
+        candidates, task, parallelism, on_complete=completed_task  # type: ignore[arg-type]
     )
 
 
@@ -867,7 +866,7 @@ def collect_snapshot(
     profile: Optional[str] = None,
     cancel=None,
     parallelism: int = 1,
-) -> Snapshot:
+) -> Dict[str, Any]:
     """Collect a full, read-only snapshot for ``side`` and persist it."""
     profile = profile or config.current_profile()
     session = ZimbraSession(config, side, readonly=(side == "source"))

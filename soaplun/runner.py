@@ -344,7 +344,7 @@ def _run_import(
             for error in (report.get("errors") or [])[:20]:
                 cli._out("ERREUR TAG : %s" % error, file=sys.stderr)
             failures += 1 if summary.get("failed") else 0
-    folder_parts = [
+    folder_parts: List[str] = [
         value for value in ("folder", "color") if value in steps
     ]
     if folder_parts:
@@ -440,10 +440,11 @@ def _run_objects(config, args, options, cancel=None) -> int:
         if names == []:
             raise RuntimeError("Aucune liste de distribution dans le fichier fourni.")
         jobs.append(("distribution_lists", {"distribution_lists": names}))
-    resource_names = []
+    resource_names: List[str] = []
     if args.create_resources or getattr(args, "import_resources", ""):
         resource_path = args.create_resources or getattr(args, "import_resources", "")
-        resource_names = cli.read_object_selection(resource_path)
+        selected_names = cli.read_object_selection(resource_path)
+        resource_names = selected_names or []
         if resource_names == []:
             raise RuntimeError("Aucune ressource dans le fichier fourni.")
         jobs.append(("resources", {"resources": resource_names}))

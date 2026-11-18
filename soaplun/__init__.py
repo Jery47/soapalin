@@ -1,7 +1,7 @@
 """Soap à l'un - Zimbra provisioning and mailbox migration tool."""
 
-from pathlib import Path as _Path
 import sys as _sys
+from pathlib import Path as _Path
 
 __version__ = "0.1.0"
 

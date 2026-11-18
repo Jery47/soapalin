@@ -2,7 +2,14 @@ import tempfile
 import unittest
 
 from soaplun.config import Config
-from soaplun.diff import RESOURCE_HANDLED, dl_attrs, generate_plan, changed_attrs, filtered_attrs, resource_attrs
+from soaplun.diff import (
+    RESOURCE_HANDLED,
+    changed_attrs,
+    dl_attrs,
+    filtered_attrs,
+    generate_plan,
+    resource_attrs,
+)
 
 
 def source_snapshot():

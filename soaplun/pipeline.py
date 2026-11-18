@@ -24,9 +24,11 @@ def runtime(args, **extra) -> SimpleNamespace:
         "mapping_host": getattr(args, "mapping_host", ""),
         "directly_clean": bool(getattr(args, "directly_clean", False)),
         "resume": bool(getattr(args, "resume", False)),
-        "since": differential.isoformat()
-        if hasattr(differential, "isoformat")
-        else "",
+        "since": (
+            differential.isoformat()
+            if differential is not None and hasattr(differential, "isoformat")
+            else ""
+        ),
         "create_user": False,
         "create_domain": "",
         "create_cos": "",
@@ -175,7 +177,7 @@ def run_cos(config, args, selected_users) -> int:
     plan = dict(plan, actions=actions)
     report = apply_plan(
         config,
-        plan,
+        plan,  # type: ignore[arg-type]
         progress=cli._progress,
         dry_run=args.dry_run,
         options=options,

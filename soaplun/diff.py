@@ -4,11 +4,10 @@ The plan only ever *creates* or *updates* destination objects.  Extra objects on
 the destination are reported as "conservés" and never removed.
 """
 
-import fnmatch
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import config as config_module
-from .inventory import now_iso
+from . import mapping
 
 # Attributes handled explicitly by the planner.
 ACCOUNT_HANDLED = {
@@ -99,7 +98,7 @@ def action(
     }
 
 
-def action_sort_key(item: Dict[str, Any]) -> Tuple[int, str]:
+def action_sort_key(item: Any) -> Tuple[int, str]:
     order = {
         "create_domain": 10,
         "create_domain_alias": 11,
@@ -138,13 +137,11 @@ def normalize(value: Any) -> Any:
 
 
 def attr_maps_equal(left: Any, right: Any) -> bool:
-    if isinstance(left, list) or isinstance(right, list):
-        return normalize(left) == normalize(right)
     return normalize(left) == normalize(right)
 
 
 def filtered_attrs(
-    config: config_module.Config,
+    config: Any,
     attrs: Dict[str, Any],
     kind: str = "account",
     handled: Iterable[str] = (),
@@ -166,7 +163,7 @@ def filtered_attrs(
 
 
 def changed_attrs(
-    config: config_module.Config,
+    config: Any,
     source: Dict[str, Any],
     destination: Dict[str, Any],
     kind: str = "account",
@@ -188,7 +185,7 @@ def map_email(config: config_module.Config, email: str) -> str:
     return config.map_email(email or "")
 
 
-def map_member(config: config_module.Config, member: str, known_domains: set) -> str:
+def map_member(config: Any, member: str, known_domains: set) -> str:
     """Map internal members, leave external addresses untouched."""
     if not member or "@" not in member:
         return member
@@ -196,15 +193,6 @@ def map_member(config: config_module.Config, member: str, known_domains: set) ->
     if domain in known_domains:
         return config.map_email(member)
     return member
-
-
-def map_host(config: config_module.Config, host: str, destination_servers: List[str]) -> str:
-    mapped = config.map_host(host or "")
-    if mapped and destination_servers and mapped not in destination_servers:
-        # Still return the mapping: the destination may use a different host
-        # name that GetServer did not list (single-server setups, VIPs...).
-        return mapped
-    return mapped
 
 
 ACCOUNT_ADDRESS_ATTRS = {
@@ -301,6 +289,8 @@ PLAN_OPTION_DEFAULTS: Dict[str, Any] = {
     "diff_keep_archives": False,
     "diff_keep_tgz_days": 0,
     "keep_tgz_days": 7,
+    "directly_clean": False,
+    "resume": False,
     "mailbox_resolve": "skip",
     "skip_duplicates": True,
     "parallelism": 1,
@@ -317,25 +307,17 @@ class PlanMapper:
         self.options = options
 
     def map_domain(self, domain: str) -> str:
-        mapping = {
-            str(key).lower(): value
-            for key, value in (self.options.get("domain_map") or {}).items()
-        }
-        return mapping.get(str(domain).lower(), domain) or domain
+        return mapping.map_domain(self.options.get("domain_map"), domain)
 
     def map_email(self, email: str) -> str:
-        if not email or "@" not in email:
-            return email
-        local, domain = email.rsplit("@", 1)
-        return "%s@%s" % (local, self.map_domain(domain))
+        return mapping.map_email(self.options.get("domain_map"), email)
 
     def map_host(self, host: str) -> str:
-        mapping = {
-            str(key).lower(): value
-            for key, value in (self.options.get("mail_host_map") or {}).items()
-        }
-        default = self.options.get("default_mail_host") or ""
-        return mapping.get(str(host).lower()) or default or host
+        return mapping.map_host(
+            self.options.get("mail_host_map"),
+            self.options.get("default_mail_host") or "",
+            host,
+        )
 
     def ignored_attr(self, name: str, kind: str = "account") -> bool:
         if kind == "domain":
@@ -360,7 +342,7 @@ class PlanMapper:
                 or self.options.get("attr_ignore")
                 or config_module.DEFAULT_ATTR_IGNORE
             )
-        return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+        return mapping.matches(name, patterns)
 
     def ignored_pref(self, name: str) -> bool:
         patterns = (
@@ -368,7 +350,7 @@ class PlanMapper:
             or self.options.get("pref_ignore")
             or config_module.DEFAULT_PREF_IGNORE
         )
-        return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+        return mapping.matches(name, patterns)
 
 
 def _as_option_bool(value: Any, default: bool = False) -> bool:
@@ -380,7 +362,7 @@ def _as_option_bool(value: Any, default: bool = False) -> bool:
 
 
 def normalize_options(
-    config: config_module.Config, overrides: Optional[Dict[str, Any]] = None
+    config: Any, overrides: Optional[Any] = None
 ) -> Dict[str, Any]:
     """Merge global defaults with plan-level overrides and decrypt secrets."""
     merged: Dict[str, Any] = dict(PLAN_OPTION_DEFAULTS)
@@ -617,811 +599,11 @@ def selected_accounts(plan: Dict[str, Any]) -> List[str]:
 # ----------------------------------------------------------------------
 # Plan generation
 # ----------------------------------------------------------------------
-def generate_plan(
-    config: config_module.Config,
-    source: Dict[str, Any],
-    destination: Dict[str, Any],
-    include_mailbox: Optional[bool] = None,
-    options: Optional[Dict[str, Any]] = None,
-    selection: Optional[Dict[str, Any]] = None,
-    category: str = "global",
-) -> Dict[str, Any]:
-    base_config = config
-    sync = normalize_options(config, options)
-    picked = normalize_selection(selection, source)
-    allowed_groups = PLAN_CATEGORY_GROUPS.get(category)
-    if allowed_groups is not None:
-        for key in (
-            "accounts",
-            "domains",
-            "cos",
-            "distribution_lists",
-            "resources",
-        ):
-            if key not in allowed_groups:
-                picked[key] = []
-        if "accounts" not in allowed_groups:
-            picked["all_accounts"] = False
-        picked["include_domains"] = (
-            picked["domains"] is None or bool(picked["domains"])
-        )
-        picked["include_cos"] = picked["cos"] is None or bool(picked["cos"])
-        picked["include_distribution_lists"] = (
-            picked["distribution_lists"] is None
-            or bool(picked["distribution_lists"])
-        )
-        picked["include_resources"] = (
-            picked["resources"] is None or bool(picked["resources"])
-        )
-    validation = validate_snapshots(config, source, destination, sync)
-    mapper = PlanMapper(config, sync)
-    config = mapper  # mapping/ignore helpers below must use the plan options
-    if include_mailbox is None:
-        include_mailbox = bool(sync.get("copy_mailbox", True))
-
-    source_domains = {
-        item["name"].lower(): item for item in source.get("domains", [])
-    }
-    dest_domains = {
-        item["name"].lower(): item for item in destination.get("domains", [])
-    }
-    source_cos = {item["name"].lower(): item for item in source.get("cos", [])}
-    dest_cos = {item["name"].lower(): item for item in destination.get("cos", [])}
-    dest_accounts = {
-        account["name"].lower(): account
-        for account in destination.get("accounts", [])
-        if account.get("name")
-    }
-    dest_alias_owner = {}
-    for account in destination.get("accounts", []):
-        for alias in account.get("aliases", []) or []:
-            if alias:
-                dest_alias_owner[str(alias).lower()] = account.get("name", "")
-    dest_dls = {
-        item["name"].lower(): item
-        for item in destination.get("distribution_lists", [])
-        if item.get("name")
-    }
-    dest_resources = {
-        item["name"].lower(): item
-        for item in destination.get("resources", [])
-        if item.get("name")
-    }
-    dest_servers = [item.get("name", "") for item in destination.get("servers", [])]
-    dest_servers_lower = {name.lower() for name in dest_servers}
-    host_map_keys = {str(key).lower() for key in (sync.get("mail_host_map") or {})}
-    unknown_hosts: set = set()
-
-    def target_host(source_host: str) -> str:
-        if not source_host:
-            return ""
-        if source_host.lower() in host_map_keys or sync.get("default_mail_host"):
-            return config.map_host(source_host)
-        if source_host.lower() in dest_servers_lower:
-            return source_host
-        unknown_hosts.add(source_host)
-        return ""
-
-    actions: List[Dict[str, Any]] = []
-    warnings: List[str] = []
-    info: List[str] = []
-
-    # -- Domains -------------------------------------------------------
-    selected_domain_names = (
-        set(picked["domains"]) if picked.get("domains") is not None else None
-    )
-    target_domains = sorted(
-        {
-            config.map_domain(name)
-            for name in source_domains
-            if name
-            and (
-                selected_domain_names is None
-                or name in selected_domain_names
-            )
-        }
-    )
-    for target in target_domains:
-        if target.lower() in dest_domains:
-            continue
-        # Find the source domain(s) mapping to this target.
-        origins = [name for name in source_domains if config.map_domain(name) == target]
-        origin = source_domains[origins[0]]
-        attrs = filtered_attrs(
-            config, origin.get("attrs", {}), kind="domain", handled=DOMAIN_HANDLED
-        )
-        domain_type = str(origin.get("attrs", {}).get("zimbraDomainType", "")).lower()
-        alias_target = _alias_target_name(origin, source_domains)
-        if domain_type == "alias" or alias_target:
-            if not alias_target:
-                warnings.append(
-                    "Domaine alias %s sans cible identifiable : ignoré." % origin["name"]
-                )
-                continue
-            target_mapped = config.map_domain(alias_target)
-            known_dest = target_mapped.lower() in dest_domains
-            known_plan = target_mapped.lower() in {
-                d.lower() for d in target_domains
-            }
-            if not known_dest and not known_plan:
-                warnings.append(
-                    "Domaine alias %s ignoré : la cible %s n'existe pas sur la "
-                    "destination." % (origin["name"], target_mapped)
-                )
-                continue
-            actions.append(
-                action(
-                    "create_domain_alias",
-                    target,
-                    "Créer le domaine alias %s → %s" % (target, target_mapped),
-                    {
-                        "name": target,
-                        "alias_target": target_mapped,
-                        "source_name": origin["name"],
-                    },
-                )
-            )
-            continue
-        actions.append(
-            action(
-                "create_domain",
-                target,
-                "Créer le domaine %s" % target,
-                {"name": target, "attrs": attrs, "source_name": origin["name"]},
-            )
-        )
-
-    # -- COS -----------------------------------------------------------
-    selected_cos = (
-        set(picked["cos"]) if picked.get("cos") is not None else None
-    )
-    for source_name, cos in sorted(source_cos.items()):
-        if selected_cos is not None and source_name.lower() not in selected_cos:
-            continue
-        target_name = cos["name"]
-        if not target_name:
-            continue
-        if target_name.lower() not in dest_cos:
-            attrs = filtered_attrs(
-                config, cos.get("attrs", {}), kind="cos", handled={"cn"}
-            )
-            actions.append(
-                action(
-                    "create_cos",
-                    target_name,
-                    "Créer la classe de service %s" % target_name,
-                    {"name": target_name, "attrs": attrs, "source_name": cos["name"]},
-                )
-            )
-        elif target_name.lower() != "default":
-            attrs = changed_attrs(
-                config,
-                cos.get("attrs", {}),
-                dest_cos[target_name.lower()].get("attrs", {}),
-                kind="cos",
-                handled={"cn"},
-            )
-            if attrs:
-                actions.append(
-                    action(
-                        "modify_cos",
-                        target_name,
-                        "Mettre à jour la classe de service %s" % target_name,
-                        {"name": target_name, "attrs": attrs},
-                        risk="high",
-                    )
-                )
-        elif source_name != "default" and target_name.lower() == "default":
-            warnings.append(
-                "La COS %s est mappée sur « default » : la COS destination "
-                "n'est pas modifiée par sécurité." % cos["name"]
-            )
-
-    # -- Accounts ------------------------------------------------------
-    planned_emails: Dict[str, str] = {}
-    account_pairs: List[Dict[str, Any]] = []
-    mailboxes: List[Dict[str, Any]] = []
-    fixed_password = bool(sync.get("fixed_password"))
-    random_password = bool(sync.get("random_password"))
-    password_source = (
-        "random" if random_password else ("fixed" if fixed_password else "source_unknown")
-    )
-    reset_existing = bool(sync.get("reset_existing_passwords"))
-    selected_emails = {str(value).lower() for value in picked.get("accounts") or []}
-
-    for account in sorted(source.get("accounts", []), key=lambda a: a.get("name", "").lower()):
-        source_name = account.get("name", "")
-        if not source_name:
-            continue
-        if account.get("is_system"):
-            continue
-        if selected_emails and source_name.lower() not in selected_emails:
-            continue
-        if not selected_emails and not picked.get("all_accounts"):
-            continue
-        target_name = map_email(config, source_name)
-        key = target_name.lower()
-        if key in planned_emails:
-            warnings.append(
-                "Collision de mapping : %s et %s pointent tous deux vers %s ; "
-                "le second est ignoré."
-                % (planned_emails[key], source_name, target_name)
-            )
-            continue
-        planned_emails[key] = source_name
-
-        cos_name = account.get("cos_name") or ""
-        host = target_host(account.get("mail_host") or "")
-        alias_map = {}
-        for alias in account.get("aliases", []):
-            mapped_alias = map_email(config, alias)
-            if mapped_alias:
-                alias_map[mapped_alias.lower()] = mapped_alias
-        alias_list = sorted(
-            alias
-            for alias in alias_map.values()
-            if alias.lower() != target_name.lower()
-        )
-        usable_aliases = []
-        for alias in alias_list:
-            owner = dest_alias_owner.get(alias.lower())
-            if owner and owner.lower() != key:
-                warnings.append(
-                    "Alias %s ignoré : déjà utilisé par le compte %s sur la "
-                    "destination." % (alias, owner)
-                )
-                continue
-            usable_aliases.append(alias)
-        alias_list = usable_aliases
-
-        existing = dest_accounts.get(key)
-        if existing is None and key in dest_alias_owner:
-            owner = dest_alias_owner[key]
-            warnings.append(
-                "Compte %s non créé : l'adresse cible existe déjà comme alias du "
-                "compte %s sur la destination. Supprimez/renommez cet alias ou "
-                "changez le mapping de domaine." % (target_name, owner)
-            )
-            account_pairs.append(
-                {
-                    "source": source_name,
-                    "destination": target_name,
-                    "status": "conflict",
-                    "note": "Adresse cible déjà utilisée comme alias par %s" % owner,
-                }
-            )
-            continue
-        if existing is None:
-            attrs = filtered_attrs(
-                config,
-                account.get("attrs", {}),
-                kind="account",
-                handled=ACCOUNT_HANDLED,
-            )
-            attrs, delegated_sender = map_account_address_attrs(
-                attrs, config, source_domains
-            )
-            if host:
-                attrs["zimbraMailHost"] = host
-            if sync.get("force_password_change"):
-                attrs["zimbraPasswordMustChange"] = "TRUE"
-            payload = {
-                "name": target_name,
-                "attrs": attrs,
-                "cos_name": cos_name,
-                "source_name": source_name,
-                "password_source": password_source,
-                "aliases": alias_list,
-                "mail_host": host,
-                "delegated_sender_addresses": delegated_sender,
-            }
-            if not fixed_password and not random_password:
-                warnings.append(
-                    "Aucun mot de passe fixe configuré : le compte %s sera créé "
-                    "sans mot de passe utilisable." % target_name
-                )
-            actions.append(
-                action(
-                    "create_account",
-                    target_name,
-                    "Créer le compte %s" % target_name,
-                    payload,
-                    risk="normal" if (fixed_password or random_password) else "high",
-                )
-            )
-            if cos_name:
-                actions.append(
-                    action(
-                        "modify_account",
-                        target_name,
-                        "Appliquer la COS %s a %s"
-                        % (cos_name, target_name),
-                        {
-                            "name": target_name,
-                            "attrs": {},
-                            "cos_name": cos_name,
-                            "source_name": source_name,
-                            "after_create": True,
-                            "changes": ["COS -> %s" % cos_name],
-                        },
-                        depends_on=["create_account:%s" % key],
-                    )
-                )
-            alias_action_ids = []
-            for alias in alias_list:
-                alias_action_ids.append("add_alias:%s" % alias.lower())
-                actions.append(
-                    action(
-                        "add_alias",
-                        alias,
-                        "Ajouter l'alias %s → %s" % (alias, target_name),
-                        {"account": target_name, "alias": alias},
-                        depends_on=["create_account:%s" % key],
-                    )
-                )
-            if delegated_sender:
-                actions.append(
-                    action(
-                        "set_delegated_sender",
-                        target_name,
-                        "Restaurer les adresses d'envoi délégué de %s" % target_name,
-                        {"name": target_name, "values": delegated_sender},
-                        depends_on=["create_account:%s" % key] + alias_action_ids,
-                    )
-                )
-        else:
-            attrs = changed_attrs(
-                config,
-                account.get("attrs", {}),
-                existing.get("attrs", {}),
-                kind="account",
-                handled=ACCOUNT_HANDLED,
-            )
-            attrs, delegated_sender = map_account_address_attrs(
-                attrs, config, source_domains
-            )
-            if host and not attr_maps_equal(host, existing.get("mail_host") or ""):
-                attrs["zimbraMailHost"] = host
-            existing_cos = (existing.get("cos_name") or "").lower()
-            different_cos = bool(cos_name) and existing_cos != cos_name.lower()
-            if attrs or different_cos:
-                actions.append(
-                    action(
-                        "modify_account",
-                        target_name,
-                        "Mettre à jour le compte %s" % target_name,
-                        {
-                            "name": target_name,
-                            "id": existing.get("id", ""),
-                            "attrs": attrs,
-                            "cos_name": cos_name if different_cos else "",
-                            "source_name": source_name,
-                            "changes": sorted(attrs.keys())
-                            + (["COS → %s" % cos_name] if different_cos else []),
-                        },
-                    )
-                )
-            if reset_existing and fixed_password:
-                actions.append(
-                    action(
-                        "set_password",
-                        target_name,
-                        "Réinitialiser le mot de passe de %s" % target_name,
-                        {
-                            "name": target_name,
-                            "id": existing.get("id", ""),
-                            "password_source": "fixed",
-                            "must_change": bool(sync.get("force_password_change")),
-                        },
-                        risk="high",
-                    )
-                )
-            existing_aliases = {
-                str(alias).lower() for alias in existing.get("aliases", [])
-            }
-            alias_action_ids = []
-            for alias in alias_list:
-                if alias.lower() not in existing_aliases:
-                    alias_action_ids.append("add_alias:%s" % alias.lower())
-                    actions.append(
-                        action(
-                            "add_alias",
-                            alias,
-                            "Ajouter l'alias %s → %s" % (alias, target_name),
-                            {"account": target_name, "alias": alias},
-                        )
-                    )
-            if delegated_sender:
-                actions.append(
-                    action(
-                        "set_delegated_sender",
-                        target_name,
-                        "Restaurer les adresses d'envoi délégué de %s" % target_name,
-                        {"name": target_name, "values": delegated_sender},
-                        depends_on=alias_action_ids,
-                    )
-                )
-
-        if include_mailbox:
-            mailbox = account.get("mailbox") or {}
-            mailboxes.append(
-                {
-                    "source": source_name,
-                    "destination": target_name,
-                    "size": mailbox.get("size"),
-                    "messages": mailbox.get("messages"),
-                    "destination_status": "new" if existing is None else "existing",
-                    "note": ""
-                    if mailbox
-                    else "Taille inconnue (boîte peut-être jamais ouverte)",
-                }
-            )
-
-        account_pairs.append(
-            {
-                "source": source_name,
-                "destination": target_name,
-                "status": "new" if existing is None else "existing",
-            }
-        )
-
-    # -- Distribution lists -------------------------------------------
-    known_source_domains = set(source_domains.keys())
-    selected_dls = (
-        set(picked["distribution_lists"])
-        if picked.get("distribution_lists") is not None
-        else None
-    )
-    for dl in sorted(source.get("distribution_lists", []), key=lambda d: d.get("name", "")):
-        source_name = dl.get("name", "")
-        if selected_dls is not None and source_name.lower() not in selected_dls:
-            continue
-        if not source_name:
-            continue
-        target_name = map_email(config, source_name)
-        members = sorted(
-            {
-                map_member(config, member, known_source_domains)
-                for member in dl.get("members", [])
-                if member
-            }
-        )
-        existing = dest_dls.get(target_name.lower())
-        if existing is None:
-            attrs = dl_attrs(
-                config,
-                dl.get("attrs", {}),
-                dynamic=bool(dl.get("is_dynamic")),
-            )
-            actions.append(
-                action(
-                    "create_dl",
-                    target_name,
-                    "Créer la liste de distribution %s" % target_name,
-                    {
-                        "name": target_name,
-                        "attrs": attrs,
-                        "members": members,
-                        "source_name": source_name,
-                        "dynamic": bool(dl.get("is_dynamic")),
-                    },
-                )
-            )
-        else:
-            attrs = changed_attrs(
-                config,
-                dl_attrs(
-                    config,
-                    dl.get("attrs", {}),
-                    dynamic=bool(dl.get("is_dynamic")),
-                ),
-                existing.get("attrs", {}),
-                kind="dl",
-                handled=set(),
-            )
-            if attrs:
-                actions.append(
-                    action(
-                        "modify_dl",
-                        target_name,
-                        "Mettre à jour la liste %s" % target_name,
-                        {"name": target_name, "attrs": attrs, "source_name": source_name},
-                    )
-                )
-            missing = sorted(
-                set(members) - {str(m).lower() for m in existing.get("members", [])}
-            )
-            if missing:
-                actions.append(
-                    action(
-                        "add_dl_member",
-                        target_name,
-                        "Ajouter %d membre(s) à %s" % (len(missing), target_name),
-                        {"name": target_name, "members": missing},
-                    )
-                )
-
-    # -- Resources -----------------------------------------------------
-    selected_resources = (
-        set(picked["resources"]) if picked.get("resources") is not None else None
-    )
-    for resource in sorted(source.get("resources", []), key=lambda r: r.get("name", "")):
-        source_name = resource.get("name", "")
-        if (
-            selected_resources is not None
-            and source_name.lower() not in selected_resources
-        ):
-            continue
-        if not source_name:
-            continue
-        target_name = map_email(config, source_name)
-        attrs = resource_attrs(config, resource.get("attrs", {}))
-        existing = dest_resources.get(target_name.lower())
-        if existing is None:
-            actions.append(
-                action(
-                    "create_resource",
-                    target_name,
-                    "Créer la ressource %s" % target_name,
-                    {
-                        "name": target_name,
-                        "attrs": attrs,
-                        "source_name": source_name,
-                        "password_source": password_source,
-                    },
-                )
-            )
-        else:
-            changes = changed_attrs(
-                config,
-                resource_attrs(config, resource.get("attrs", {})),
-                existing.get("attrs", {}),
-                kind="resource",
-                handled=RESOURCE_HANDLED,
-            )
-            if changes:
-                actions.append(
-                    action(
-                        "modify_resource",
-                        target_name,
-                        "Mettre à jour la ressource %s" % target_name,
-                        {"name": target_name, "attrs": changes, "source_name": source_name},
-                    )
-                )
-
-    # -- Extras kept on destination -----------------------------------
-    source_emails = {map_email(config, a.get("name", "")).lower() for a in source.get("accounts", [])}
-    extras = sorted(
-        name for name in dest_accounts if name not in source_emails
-    )
-    if extras and account_pairs:
-        info.append(
-            "%d compte(s) présent(s) uniquement sur la destination seront "
-            "conservés (aucune suppression)." % len(extras)
-        )
-    source_dl_names = {
-        map_email(config, d.get("name", "")).lower()
-        for d in source.get("distribution_lists", [])
-    }
-    extra_dls = sorted(name for name in dest_dls if name not in source_dl_names)
-    if extra_dls and (selected_dls is None or selected_dls):
-        info.append(
-            "%d liste(s) de distribution supplémentaire(s) seront conservées."
-            % len(extra_dls)
-        )
-
-    # -- Warnings about unmapped domains ------------------------------
-    for name in sorted(source_domains):
-        if selected_domain_names is not None and name not in selected_domain_names:
-            continue
-        mapped = config.map_domain(name)
-        if mapped.lower() not in dest_domains and mapped.lower() not in {
-            d.lower() for d in target_domains
-        }:
-            warnings.append(
-                "Le domaine %s n'existe pas sur la destination et ne sera pas "
-                "créé : vérifiez le mapping." % mapped
-            )
-
-    for host in sorted(unknown_hosts):
-        warnings.append(
-            "L'hôte mail %s n'existe pas sur la destination et n'est pas mappé : "
-            "les comptes seront créés sans zimbraMailHost explicite (Zimbra "
-            "choisira l'hôte par défaut)." % host
-        )
-
-    limit = int(sync.get("max_accounts_per_plan") or 0)
-    selected_account_count = (
-        len(picked.get("accounts") or [])
-        if picked.get("accounts") is not None
-        else len(source.get("accounts", []))
-    )
-    if limit and selected_account_count > limit:
-        warnings.append(
-            "Le plan couvre %d comptes, au-delà de la limite configurée (%d). "
-            "Appliquez-le par lots ou augmentez la limite."
-            % (selected_account_count, limit)
-        )
-
-    if not picked["include_domains"] and account_pairs:
-        warnings.append(
-            "Les domaines ne sont pas inclus dans ce plan : les comptes ne "
-            "pourront être créés que si leurs domaines existent déjà sur la "
-            "destination."
-        )
-    if picked.get("accounts") is not None:
-        wanted = {str(value).lower() for value in picked["accounts"]}
-        known = {
-            str(account.get("name", "")).lower()
-            for account in source.get("accounts", [])
-            if account.get("name")
-        }
-        missing = sorted(wanted - known)
-        if missing:
-            sample = ", ".join(missing[:10])
-            if len(missing) > 10:
-                sample += ", ..."
-            warnings.append(
-                "%d compte(s) saisi(s) introuvable(s) dans l'inventaire source : %s"
-                % (len(missing), sample)
-            )
-
-    if not picked["include_cos"] and account_pairs:
-        warnings.append(
-            "Les COS ne sont pas incluses dans ce plan : vérifiez que les COS "
-            "cibles existent déjà sur la destination."
-        )
-
-    actions.sort(key=action_sort_key)
-
-    summary: Dict[str, int] = {}
-    for item in actions:
-        summary[item["kind"]] = summary.get(item["kind"], 0) + 1
-
-    source_accounts_by_name = {
-        str(account.get("name", "")).lower(): account
-        for account in source.get("accounts", [])
-        if account.get("name")
-    }
-    id_map: List[Dict[str, str]] = []
-
-    def add_id(kind, source_name, source_id, destination_name, destination_id):
-        id_map.append(
-            {
-                "kind": kind,
-                "source": source_name,
-                "source_id": str(source_id or ""),
-                "destination": destination_name,
-                "destination_id": str(destination_id or ""),
-            }
-        )
-
-    for pair in account_pairs:
-        src = source_accounts_by_name.get(pair["source"].lower(), {})
-        dst = dest_accounts.get(pair["destination"].lower(), {})
-        add_id(
-            "account",
-            pair["source"],
-            src.get("id"),
-            pair["destination"],
-            dst.get("id"),
-        )
-    for item in source.get("domains", []):
-        name = str(item.get("name", ""))
-        if not name:
-            continue
-        if selected_domain_names is not None and name.lower() not in selected_domain_names:
-            continue
-        target = config.map_domain(name)
-        dst = dest_domains.get(target.lower(), {})
-        add_id("domain", name, item.get("id"), target, dst.get("id"))
-    for item in source.get("cos", []):
-        name = str(item.get("name", ""))
-        if not name:
-            continue
-        if selected_cos is not None and name.lower() not in selected_cos:
-            continue
-        target = name
-        dst = dest_cos.get(target.lower(), {})
-        add_id("cos", name, item.get("id"), target, dst.get("id"))
-    for item in source.get("distribution_lists", []):
-        name = str(item.get("name", ""))
-        if not name:
-            continue
-        if selected_dls is not None and name.lower() not in selected_dls:
-            continue
-        target = config.map_email(name)
-        dst = dest_dls.get(target.lower(), {})
-        add_id("distribution_list", name, item.get("id"), target, dst.get("id"))
-    for item in source.get("resources", []):
-        name = str(item.get("name", ""))
-        if not name:
-            continue
-        if (
-            selected_resources is not None
-            and name.lower() not in selected_resources
-        ):
-            continue
-        target = config.map_email(name)
-        dst = dest_resources.get(target.lower(), {})
-        add_id("resource", name, item.get("id"), target, dst.get("id"))
-
-    stored_options_data = stored_options(base_config, sync)
-    stored_options_data["content_types"] = list(
-        sync.get("content_types") or PLAN_CONTENT_TYPES
-    )
-    stored_options_data["copy_mailbox"] = bool(include_mailbox)
-
-    active_profile = base_config.current_profile()
-    plan = {
-        "version": 2,
-        "planner_version": PLANNER_VERSION,
-        "category": category,
-        "profile": active_profile,
-        "profile_name": base_config.profile_name(active_profile),
-        "created_at": now_iso(),
-        "source": {
-            "host": source.get("host", ""),
-            "created_at": source.get("created_at", ""),
-            "counts": source.get("counts", {}),
-            "path": source.get("path", ""),
-        },
-        "destination": {
-            "host": destination.get("host", ""),
-            "created_at": destination.get("created_at", ""),
-            "counts": destination.get("counts", {}),
-            "path": destination.get("path", ""),
-        },
-        "validation": validation,
-        "summary": summary,
-        "total_actions": len(actions),
-        "actions": actions,
-        "accounts": account_pairs,
-        "mailboxes": mailboxes,
-        "mailbox_count": len(mailboxes),
-        "warnings": warnings + validation["warnings"],
-        "info": info,
-        "mapping": {
-            "domains": sync.get("domain_map", {}),
-            "hosts": sync.get("mail_host_map", {}),
-                "default_mail_host": sync.get("default_mail_host", ""),
-        },
-        "options": stored_options_data,
-        "selection": picked,
-        "id_map": id_map,
-    }
-    return plan
 
 
-def _alias_target_name(
-    domain: Dict[str, Any], source_domains: Dict[str, Dict[str, Any]]
-) -> str:
-    attrs = domain.get("attrs", {}) or {}
-    catch_all = str(attrs.get("zimbraMailCatchAllForwardingAddress", "") or "")
-    if catch_all.startswith("@"):
-        return catch_all[1:]
-    target_id = str(attrs.get("zimbraDomainAliasTargetId", "") or "")
-    if target_id:
-        for item in source_domains.values():
-            if item.get("id") == target_id:
-                return item.get("name", "")
-    return ""
+def __getattr__(name):
+    if name in {"PlanBuilder", "generate_plan"}:
+        from . import planner
 
-
-# ----------------------------------------------------------------------
-# Plan persistence
-# ----------------------------------------------------------------------
-def stored_options(
-    config: config_module.Config, options: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Prepare options for JSON persistence (secret stays encrypted)."""
-    stored = dict(options)
-    fixed = stored.pop("fixed_password", "") or ""
-    encrypted = stored.pop("fixed_password_encrypted", "") or ""
-    if fixed:
-        encrypted = config.encrypt_secret(fixed)
-    stored["fixed_password"] = bool(fixed or encrypted)
-    stored["fixed_password_encrypted"] = encrypted
-    return stored
-
-
+        return getattr(planner, name)
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))

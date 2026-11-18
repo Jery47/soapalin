@@ -42,19 +42,8 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"
-files = [
-    "soaplun/storage.py",
-    "soaplun/parallel.py",
-    "soaplun/models.py",
-    "soaplun/inputs.py",
-    "soaplun/mapping.py",
-    "soaplun/schema.py",
-    "soaplun/cleanup.py",
-    "soaplun/planner.py",
-    "soaplun/context.py",
-    "soaplun/mailbox_common.py",
-    "soaplun/settings_common.py",
-]
+files = ["soaplun"]
+
 ignore_missing_imports = true
 follow_imports = "skip"
 warn_unused_ignores = false

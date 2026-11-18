@@ -1,4 +1,3 @@
-import gzip
 import io
 import json
 import tarfile
@@ -47,7 +46,7 @@ class ApplyHelperTests(unittest.TestCase):
 class MailboxTests(unittest.TestCase):
     def test_cleanup_partial_archives(self):
         import tempfile
-        from pathlib import Path as P
+
         from soaplun.config import Config
 
         with tempfile.TemporaryDirectory() as tmp:

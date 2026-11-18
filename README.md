@@ -46,7 +46,7 @@ Options globales, avant la sous-commande :
 --foreground
 ```
 
-Sous-commandes : `server`, `provision`, `migrate`, `job`.
+Sous-commandes : `server`, `provision`, `migrate`, `job`, `clean`.
 
 ## Architecture
 
@@ -82,9 +82,9 @@ soapalin server rename src1 zimbra-prod
 soapalin server remove src1
 ```
 
-`server inventory --no-stats` ?vite un `GetMailbox` par compte : l'inventaire est plus rapide, mais les tailles et volumes des bo?tes ne sont pas collect?s.
+`server inventory --no-stats` évite un `GetMailbox` par compte : l'inventaire est plus rapide, mais les tailles et volumes des boîtes ne sont pas collectés.
 
-`--parallelism N` collecte les comptes avec plusieurs sessions ind?pendantes (d?faut : 1).
+`--parallelism N` collecte les comptes avec plusieurs sessions indépendantes (défaut : 1).
 
 Les serveurs sont stockés dans `config/servers/<label>.json`. Editer ensuite
 ces fichiers pour renseigner les hôtes, ports, comptes admin et mots de passe.
@@ -109,7 +109,7 @@ soapalin provision users.csv --type account --from src1 --to dst1 --random-passw
 --mapping-host CSV
 ```
 
-`provision account` applique la COS source d?s la cr?ation du compte, puis ajoute une action `modify_account` pour confirmer la COS apr?s cr?ation.
+`provision account` applique la COS source dès la création du compte, puis ajoute une action `modify_account` pour confirmer la COS après création.
 
 ## Migration
 
@@ -135,8 +135,8 @@ dl       : members
 `--type all` accepte un CSV de comptes : les comptes sont filtres, les ressources et DL sont traites en `all`. Les tags manquants sont resynchronisés en mode
 différentiel.
 
-L'?l?ment `cos` applique uniquement la COS source aux comptes d?j? existants.
-Il faut d'abord cr?er les COS, puis rafra?chir l'inventaire destination :
+L'élément `cos` applique uniquement la COS source aux comptes déjà existants.
+Il faut d'abord créer les COS, puis rafraîchir l'inventaire destination :
 
 ```bash
 soapalin --foreground provision all --type cos --from src1 --to dst1
@@ -146,15 +146,15 @@ soapalin --foreground migrate users.csv --type account --item cos --from src1 --
 
 ### Partages
 
-`share` migre les partages sortants et recr?e en mode accept? les partages
-entrants d?j? accept?s sur la source (`mid` pr?sent). Les partages entrants
-non accept?s sont ignor?s.
+`share` migre les partages sortants et recrée en mode accepté les partages
+entrants déjà acceptés sur la source (`mid` présent). Les partages entrants
+non acceptés sont ignorés.
 
 ### Dossiers
 
-- `folder` cr?e uniquement l'arborescence de dossiers manquante, sans copier les messages.
-- `color` applique uniquement les couleurs aux dossiers existants, sans cr?er de dossier.
-- Les deux peuvent ?tre combin?s : `folder` est ex?cut? avant `color`.
+- `folder` crée uniquement l'arborescence de dossiers manquante, sans copier les messages.
+- `color` applique uniquement les couleurs aux dossiers existants, sans créer de dossier.
+- Les deux peuvent être combinés : `folder` est exécuté avant `color`.
 
 ```bash
 soapalin migrate users.csv --type account --item folder --from src1 --to dst1
@@ -220,7 +220,7 @@ Les états et journaux sont dans `data/jobs/<id>/`.
 ```text
 --differential [YYYY-MM-DD]
 --retry-failed [RAPPORT]
---parallelism N          (d?faut : 1, actions independantes)
+--parallelism N          (défaut : 1, actions independantes)
 --keep-tgz [true|false]
 --keep-tgz-days N
 --mapping-domain CSV
@@ -255,7 +255,7 @@ soapalin clean --share --type account --to dst1 --parallelism 10
 soapalin clean --share users.csv --type account --from src1 --to dst1
 ```
 
-Sans `--from`, tous les mountpoints de partage des comptes s?lectionn?s sont supprim?s. Avec `--from`, seuls les mountpoints absents de la source sont supprim?s.
+Sans `--from`, tous les mountpoints de partage des comptes sélectionnés sont supprimés. Avec `--from`, seuls les mountpoints absents de la source sont supprimés.
 
 
 ## Données

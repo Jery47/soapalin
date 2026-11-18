@@ -123,8 +123,7 @@ def run(args):
     return 1 if report["errors"] else 0
 
 def _run_share_cleanup(args, config):
-    from .. import cli
-    from .. import inventory
+    from .. import cli, inventory
     from ..connections import ZimbraSession, describe_error
     from ..parallel import map_ordered
 
