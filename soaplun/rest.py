@@ -16,7 +16,6 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Dict, Optional, Tuple, Union
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -95,6 +94,7 @@ class RestClient:
         headers: Optional[Dict[str, str]] = None,
         auth_token: str = "",
     ) -> http.client.HTTPResponse:
+        logger.debug("REST %s %s", method, url)
         if auth_token:
             sep = "&" if "?" in url else "?"
             url = "%s%sauth=qp&zauthtoken=%s" % (
@@ -161,6 +161,7 @@ class RestClient:
         """Stream ``url`` to ``destination`` and return the number of bytes."""
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        part = destination.with_suffix(destination.suffix + ".part")
         last_error: Optional[BaseException] = None
         for attempt in range(REST_RETRIES + 1):
             try:
@@ -169,7 +170,7 @@ class RestClient:
                 try:
                     length = response.headers.get("Content-Length")
                     expected = int(length) if length and length.isdigit() else None
-                    with destination.open("wb") as handle:
+                    with part.open("wb") as handle:
                         while True:
                             chunk = response.read(chunk_size)
                             if not chunk:
@@ -180,10 +181,15 @@ class RestClient:
                                 progress(total, expected)
                 finally:
                     response.close()
+                os.replace(part, destination)
                 return total
             except Exception as exc:  # noqa: BLE001 - retry transient transport errors
                 last_error = exc
                 if attempt >= REST_RETRIES or not _retryable_error(exc):
+                    try:
+                        part.unlink()
+                    except OSError:
+                        pass
                     raise
                 logger.warning(
                     "REST download retry %d/%d after %s",
@@ -206,6 +212,7 @@ class RestClient:
         """Stream ``source`` to ``url``.  Returns ``(status, body)``."""
         source = Path(source)
         size = source.stat().st_size
+        logger.debug("REST POST %s (%d bytes)", url, size)
         headers = {"Content-Type": "application/x-gzip"}
         headers.update(extra_headers or {})
 
@@ -221,6 +228,13 @@ class RestClient:
                     progress(self.sent, size)
                 return chunk
 
+        if auth_token:
+            sep = "&" if "?" in url else "?"
+            url = "%s%sauth=qp&zauthtoken=%s" % (
+                url,
+                sep,
+                urllib.parse.quote(auth_token, safe=""),
+            )
         with source.open("rb") as handle:
             reader = _ProgressReader(handle)
             request = urllib.request.Request(url, data=reader, method="POST")
@@ -228,14 +242,6 @@ class RestClient:
             request.add_header("Content-Length", str(size))
             for key, value in headers.items():
                 request.add_header(key, value)
-            if auth_token:
-                sep = "&" if "?" in url else "?"
-                url = "%s%sauth=qp&zauthtoken=%s" % (
-                    url,
-                    sep,
-                    urllib.parse.quote(auth_token, safe=""),
-                )
-                request.full_url = url
             try:
                 response = urllib.request.urlopen(
                     request, timeout=self.timeout, context=self.context

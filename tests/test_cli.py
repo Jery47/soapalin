@@ -192,6 +192,24 @@ class NewCliParserTests(unittest.TestCase):
         cli.validate(args, parser)
         return args
 
+    def test_resume_option_is_exposed(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "--type",
+                "account",
+                "--item",
+                "mail",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+                "--resume",
+            ]
+        )
+        self.assertTrue(args.resume)
+
     def test_help_lists_command_examples(self):
         help_text = self.parser().format_help()
         for value in (

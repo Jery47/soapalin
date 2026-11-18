@@ -205,6 +205,52 @@ class CleanupPlanTests(unittest.TestCase):
             result = clean_cmd.run(args)
         self.assertEqual(result, 0)
 
+    def test_clean_share_deletes_mountpoints(self):
+        deleted = []
+
+        class Mail:
+            def delete_mountpoints(self, folder_ids=None):
+                deleted.append(folder_ids)
+
+        class Session:
+            def mail_client(self, email):
+                return Mail()
+
+        args = SimpleNamespace(
+            targets=["u@example.com", "share"],
+            type="account",
+            to_label="dst1",
+            from_label="",
+            dry_run=False,
+            parallelism=2,
+            older_than=0,
+            keep_last=0,
+        )
+
+        @contextlib.contextmanager
+        def context():
+            yield "dst1"
+
+        config = mock.Mock()
+        config.use_server.return_value = "dst1"
+        config.current_profile.return_value = "dst1"
+        config.profile_context.side_effect = lambda profile: context()
+        config.map_email.side_effect = lambda value: value
+        links = [
+            {"id": "10", "rid": "1", "path": "/old"},
+            {"id": "20", "rid": "", "path": "/Files shared with me"},
+        ]
+        with mock.patch("soaplun.config.Config", return_value=config), mock.patch(
+            "soaplun.cli.read_users", return_value=["u@example.com"]
+        ), mock.patch(
+            "soaplun.connections.ZimbraSession", return_value=Session()
+        ), mock.patch(
+            "soaplun.inventory.collect_mountpoints", return_value=links
+        ), contextlib.redirect_stdout(io.StringIO()):
+            result = clean_cmd.run(args)
+        self.assertEqual(result, 0)
+        self.assertEqual(deleted, [["10"]])
+
     def test_clean_command_dry_run(self):
         root = self.config.storage_path("mailbox_path")
         old = root / "run-old"

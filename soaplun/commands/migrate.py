@@ -61,6 +61,8 @@ def add_parser(subparsers):
             "  soapalin migrate lists.csv --type dl --item members --from src1 --to dst1\n"
             "  soapalin migrate all --type all --item all --from src1 --to dst1\n"
             "\n"
+            "Options globales avant migrate : --dry-run, --foreground, --directly-clean, -q, -v, --debug.\n"
+            "\n"
             "Attention : --differential accepte une date optionnelle et peut avaler\n"
             "le CSV positionnel. Ecrivez le CSV avant l'option, ou utilisez\n"
             "--differential=YYYY-MM-DD.\n"

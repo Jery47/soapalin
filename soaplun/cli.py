@@ -65,6 +65,13 @@ def _out(*args, **kwargs):
         print(*args, **kwargs)
 
 
+def _progress(done, total, message, detail=None):
+    """Lazy wrapper used by CLI helpers; runner owns the implementation."""
+    from .runner import _progress as runner_progress
+
+    return runner_progress(done, total, message, detail)
+
+
 def _parse_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -519,20 +526,30 @@ def main(argv: Optional[Sequence[str]] = None, _from_job: bool = False) -> int:
         return 1
 
 
-from .runner import (  # noqa: E402,F401
-    _base_options,
-    _build_plan,
-    _load_snapshots,
-    _print_summary,
-    _progress,
-    _retry_users,
-    _run_create,
-    _run_diff,
-    _run_import,
-    _run_objects,
-    _validate_target_domains,
-    _write_passwords,
-)
+_RUNNER_EXPORTS = {
+    "_base_options",
+    "_build_plan",
+    "_load_snapshots",
+    "_print_summary",
+    "_progress",
+    "_retry_users",
+    "_run_create",
+    "_run_diff",
+    "_run_import",
+    "_run_objects",
+    "_validate_target_domains",
+    "_write_passwords",
+}
+
+
+def __getattr__(name):
+    """Lazily re-export runner helpers without a cli <-> runner import cycle."""
+    if name in _RUNNER_EXPORTS:
+        from . import runner
+
+        return getattr(runner, name)
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
