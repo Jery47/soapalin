@@ -1131,15 +1131,23 @@ IMPORT_CHUNK_BYTES = 1024 * 1024 * 1024
 IMPORT_CHUNK_ITEMS = 100
 
 
-def _destination_has_kind(client: Any, kind: str) -> bool:
+def _destination_has_kind(
+    client: Any, kind: str, cache: Optional[Dict[str, bool]] = None
+) -> bool:
+    if cache is not None and kind in cache:
+        return cache[kind]
     if kind == "mail":
-        return _destination_has_messages(client)
-    search = STRUCTURED_SEARCH.get(kind)
-    if not search:
-        return False
-    for _ in _search_pages(client, search[0], search[1]):
-        return True
-    return False
+        result = _destination_has_messages(client)
+    else:
+        search = STRUCTURED_SEARCH.get(kind)
+        result = False
+        if search:
+            for _ in _search_pages(client, search[0], search[1]):
+                result = True
+                break
+    if cache is not None:
+        cache[kind] = result
+    return result
 
 
 def _entry_keys(entries: Iterable[Dict[str, Any]]) -> Set[str]:
@@ -1325,6 +1333,7 @@ def _incremental_content_record(
     compare_destination: bool = True,
     mailbox_size: int = 0,
     since: str = "",
+    presence_cache: Optional[Dict[str, bool]] = None,
 ) -> Dict[str, Any]:
     mode = "incremental" if compare_destination else "chunked"
     if not since and config is not None:
@@ -1394,7 +1403,7 @@ def _incremental_content_record(
                 "bytes": 0,
             }
     else:
-        if not _destination_has_kind(destination_client, content):
+        if not _destination_has_kind(destination_client, content, presence_cache):
             return _full_content_record(
                 config,
                 source,
@@ -1744,6 +1753,7 @@ def _copy_incremental_account(
         ))
         if needs_source_mail:
             source_client = source.mail_client(source_email)
+        presence_cache: Dict[str, bool] = {}
 
         for content in contents:
             label = CONTENT_SPECS.get(content, {}).get("label", content)
@@ -1767,6 +1777,7 @@ def _copy_incremental_account(
                 compare_destination,
                 mailbox_size=mailbox_size,
                 since=since,
+                presence_cache=presence_cache,
             )
             record["contents"].append(content_record)
             record["warnings"].extend(content_record.get("warnings") or [])

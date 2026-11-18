@@ -230,7 +230,7 @@ def copy_account_settings(
             try:
                 source_session, destination_session = sessions()
                 settings = inventory_module.collect_account_settings(
-                    source_session, source_email
+                    source_session, source_email, parts=list(wanted_parts)
                 )
                 if settings.get("error"):
                     raise SettingsError(settings["error"])

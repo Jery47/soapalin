@@ -13,6 +13,7 @@ from soaplun.inventory import (
     attrs_to_dict,
     bool_attr,
     cleanup_snapshots,
+    collect_account_settings,
     collect_accounts,
     collect_cos,
     collect_folder_bundle,
@@ -161,6 +162,51 @@ class DomainListingTests(unittest.TestCase):
         items = collect_cos(FakeClient())
         self.assertEqual(calls, ["GetAllCos", "GetCos"])
         self.assertEqual(items, [{"name": "default", "id": "1", "attrs": {}}])
+
+
+class SelectiveSettingsTests(unittest.TestCase):
+    def test_tags_part_skips_unrelated_calls(self):
+        class Account:
+            def get_signatures(self):
+                raise AssertionError("signatures must not be collected")
+
+            def get_identities(self):
+                raise AssertionError("identities must not be collected")
+
+            def get_preferences(self):
+                raise AssertionError("prefs must not be collected")
+
+            def get_white_black_lists(self):
+                raise AssertionError("lists must not be collected")
+
+            def get_share_info(self):
+                raise AssertionError("shares must not be collected")
+
+        class Mail:
+            def request(self, name, content=None):
+                if name == "GetTag":
+                    return {"tag": [{"name": "Tag1", "color": "1"}]}
+                raise AssertionError("unexpected call %s" % name)
+
+            def get_filter_rules(self, way="in"):
+                raise AssertionError("filters must not be collected")
+
+        class Session:
+            def account_client(self, email):
+                return Account()
+
+            def mail_client(self, email):
+                return Mail()
+
+            def request_single(self, name, content=None):
+                raise AssertionError("GetAccount must not be called")
+
+        result = collect_account_settings(
+            Session(), "u@example.com", parts=["tags"]
+        )
+        self.assertEqual(result["tags"][0]["name"], "Tag1")
+        self.assertEqual(result["signatures"], [])
+        self.assertEqual(result["mountpoints"], [])
 
 
 class FolderBundleTests(unittest.TestCase):

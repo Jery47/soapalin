@@ -70,6 +70,7 @@ def copy_outgoing_shares(
     }
 
     folder_cache: Dict[str, str] = {}
+    grantee_cache: Dict[Tuple[str, str], bool] = {}
     for share in source_shares:
         path = share.get("folderPath") or ""
         grantee = share.get("granteeName") or ""
@@ -79,7 +80,14 @@ def copy_outgoing_shares(
             continue
         if grantee and "@" in grantee:
             grantee = _map_email(effective, grantee)
-        if not _grantee_exists(destination_session, grantee, grantee_type):
+        grantee_key = (grantee.lower(), grantee_type)
+        grantee_ok = grantee_cache.get(grantee_key)
+        if grantee_ok is None:
+            grantee_ok = _grantee_exists(
+                destination_session, grantee, grantee_type
+            )
+            grantee_cache[grantee_key] = grantee_ok
+        if not grantee_ok:
             result["ignored"] += 1
             result["ignored_shares"].append(
                 {"folder": path, "grantee": grantee, "type": grantee_type}

@@ -549,8 +549,10 @@ def collect_tags(client: Any) -> List[Dict[str, Any]]:
     return tags
 
 
-def collect_account_settings(session: ZimbraSession, email: str) -> Dict[str, Any]:
-    """Collect signatures, identities, prefs, filters, lists, shares, rights."""
+def collect_account_settings(
+    session: ZimbraSession, email: str, parts: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Collect account settings, limited to the requested setting parts."""
     settings: Dict[str, Any] = {
         "signatures": [],
         "identities": [],
@@ -568,124 +570,157 @@ def collect_account_settings(session: ZimbraSession, email: str) -> Dict[str, An
         "account_attrs": {},
         "cos_name": "",
     }
+    wanted = set(parts) if parts is not None else None
+
+    def need(*names: str) -> bool:
+        return wanted is None or bool(wanted.intersection(names))
+
     try:
         account = session.account_client(email)
     except Exception as exc:  # noqa: BLE001
         settings["error"] = describe_error(exc)
         return settings
-    try:
-        mail = session.mail_client(email)
-    except Exception as exc:  # noqa: BLE001
-        mail = None
-        settings.setdefault("warnings", []).append(
-            "mailbox: %s" % describe_error(exc)
-        )
+    mail = None
+    if need("folder", "folders", "color", "shares", "tags", "filters", "permissions"):
+        try:
+            mail = session.mail_client(email)
+        except Exception as exc:  # noqa: BLE001
+            settings.setdefault("warnings", []).append(
+                "mailbox: %s" % describe_error(exc)
+            )
 
     def safe(label, func, default):
         try:
             return func()
         except Exception as exc:  # noqa: BLE001
-            settings.setdefault("warnings", []).append("%s: %s" % (label, describe_error(exc)))
+            settings.setdefault("warnings", []).append(
+                "%s: %s" % (label, describe_error(exc))
+            )
             return default
 
-    settings["signatures"] = [
-        zobject_data(item) for item in safe("signatures", account.get_signatures, [])
-    ]
-    settings["identities"] = [
-        zobject_data(item) for item in safe("identities", account.get_identities, [])
-    ]
-    settings["prefs"] = safe("prefs", account.get_preferences, {}) or {}
-    try:
-        account_payload = session.request_single(
-            "GetAccount",
-            {
-                "account": {"by": "name", "_content": email},
-                "applyCos": "0",
-            },
-        )
-        account_obj = unwrap(account_payload, "account")
-        attrs = attrs_to_dict(
-            account_obj if isinstance(account_obj, dict) else {}
-        )
-        settings["account_attrs"] = attrs
-        cos_id = attrs.get("zimbraCOSId")
-        if cos_id:
-            try:
-                cos_payload = session.request_single(
-                    "GetCos",
-                    {"cos": {"by": "id", "_content": str(cos_id)}},
-                )
-                cos_obj = unwrap(cos_payload, "cos")
-                if isinstance(cos_obj, dict):
-                    settings["cos_name"] = str(cos_obj.get("name") or "")
-            except Exception as exc:  # noqa: BLE001
-                settings.setdefault("warnings", []).append(
-                    "cos: %s" % describe_error(exc)
-                )
-    except Exception as exc:  # noqa: BLE001
-        settings["account_attrs"] = {}
-        settings.setdefault("warnings", []).append(
-            "attributs de compte: %s" % describe_error(exc)
-        )
-    folder_bundle = safe(
-        "folders",
-        lambda: collect_folder_bundle(mail, email) if mail else {},
-        {},
-    )
-    settings["folders"] = folder_bundle.get("folders", [])
-    settings["all_folders"] = folder_bundle.get("all_folders", [])
-    settings["tags"] = safe(
-        "tags", lambda: collect_tags(mail) if mail else [], []
-    )
-    settings["filters_in"] = [
-        zobject_data(item)
-        for item in safe(
-            "filters in",
-            lambda: mail.get_filter_rules("in") if mail else [],
-            [],
-        )
-    ]
-    settings["filters_out"] = [
-        zobject_data(item)
-        for item in safe(
-            "filters out",
-            lambda: mail.get_filter_rules("out") if mail else [],
-            [],
-        )
-    ]
-    lists = safe("whitelist", account.get_white_black_lists, {}) or {}
-    settings["whitelist"] = _address_list(lists.get("whiteList"))
-    settings["blacklist"] = _address_list(lists.get("blackList"))
-    settings["shares_out"] = folder_bundle.get("shares_out", [])
-    settings["mountpoints"] = safe("shares in", account.get_share_info, [])
-    mount_links = folder_bundle.get("mountpoints", [])
-    links_by_id = {
-        str(link.get("id")): link for link in mount_links if link.get("id")
-    }
-    links_by_remote = {
-        (str(link.get("zid")), str(link.get("rid"))): link
-        for link in mount_links
-    }
-    for share in settings["mountpoints"]:
-        if not isinstance(share, dict):
-            continue
-        link = links_by_id.get(str(share.get("mid") or ""))
-        if link is None:
-            link = links_by_remote.get(
-                (str(share.get("ownerId") or ""), str(share.get("folderId") or ""))
+    if need("settings"):
+        settings["signatures"] = [
+            zobject_data(item)
+            for item in safe("signatures", account.get_signatures, [])
+        ]
+        settings["identities"] = [
+            zobject_data(item)
+            for item in safe("identities", account.get_identities, [])
+        ]
+    if need("prefs"):
+        settings["prefs"] = safe("prefs", account.get_preferences, {}) or {}
+
+    if need("attributes", "cos"):
+        try:
+            account_payload = session.request_single(
+                "GetAccount",
+                {
+                    "account": {"by": "name", "_content": email},
+                    "applyCos": "0",
+                },
             )
-        if link is not None:
-            share["mountPath"] = link.get("path", "")
-            share["mountName"] = link.get("name", "")
-            share["mountColor"] = link.get("color", "")
-            share["mountRgb"] = link.get("rgb", "")
-    try:
-        permissions = (mail or account).request("GetPermission", {})
-        settings["permissions"] = as_list(permissions.get("ace"))
-    except Exception as exc:  # noqa: BLE001
-        settings.setdefault("warnings", []).append(
-            "permissions: %s" % describe_error(exc)
+            account_obj = unwrap(account_payload, "account")
+            attrs = attrs_to_dict(
+                account_obj if isinstance(account_obj, dict) else {}
+            )
+            settings["account_attrs"] = attrs
+            if need("cos"):
+                cos_id = attrs.get("zimbraCOSId")
+                if cos_id:
+                    try:
+                        cos_payload = session.request_single(
+                            "GetCos",
+                            {"cos": {"by": "id", "_content": str(cos_id)}},
+                        )
+                        cos_obj = unwrap(cos_payload, "cos")
+                        if isinstance(cos_obj, dict):
+                            settings["cos_name"] = str(
+                                cos_obj.get("name") or ""
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        settings.setdefault("warnings", []).append(
+                            "cos: %s" % describe_error(exc)
+                        )
+        except Exception as exc:  # noqa: BLE001
+            settings["account_attrs"] = {}
+            settings.setdefault("warnings", []).append(
+                "attributs de compte: %s" % describe_error(exc)
+            )
+
+    if need("folder", "folders", "color", "shares"):
+        folder_bundle = safe(
+            "folders",
+            lambda: collect_folder_bundle(mail, email) if mail else {},
+            {},
         )
+        if need("folder"):
+            settings["all_folders"] = folder_bundle.get("all_folders", [])
+        if need("folders", "color"):
+            settings["folders"] = folder_bundle.get("folders", [])
+        if need("shares"):
+            settings["shares_out"] = folder_bundle.get("shares_out", [])
+            mount_links = folder_bundle.get("mountpoints", [])
+
+    if need("tags"):
+        settings["tags"] = safe(
+            "tags", lambda: collect_tags(mail) if mail else [], []
+        )
+    if need("filters"):
+        settings["filters_in"] = [
+            zobject_data(item)
+            for item in safe(
+                "filters in",
+                lambda: mail.get_filter_rules("in") if mail else [],
+                [],
+            )
+        ]
+        settings["filters_out"] = [
+            zobject_data(item)
+            for item in safe(
+                "filters out",
+                lambda: mail.get_filter_rules("out") if mail else [],
+                [],
+            )
+        ]
+    if need("lists"):
+        lists = safe("whitelist", account.get_white_black_lists, {}) or {}
+        settings["whitelist"] = _address_list(lists.get("whiteList"))
+        settings["blacklist"] = _address_list(lists.get("blackList"))
+    if need("shares"):
+        settings["mountpoints"] = safe("shares in", account.get_share_info, [])
+        links_by_id = {
+            str(link.get("id")): link
+            for link in mount_links
+            if link.get("id")
+        }
+        links_by_remote = {
+            (str(link.get("zid")), str(link.get("rid"))): link
+            for link in mount_links
+        }
+        for share in settings["mountpoints"]:
+            if not isinstance(share, dict):
+                continue
+            link = links_by_id.get(str(share.get("mid") or ""))
+            if link is None:
+                link = links_by_remote.get(
+                    (
+                        str(share.get("ownerId") or ""),
+                        str(share.get("folderId") or ""),
+                    )
+                )
+            if link is not None:
+                share["mountPath"] = link.get("path", "")
+                share["mountName"] = link.get("name", "")
+                share["mountColor"] = link.get("color", "")
+                share["mountRgb"] = link.get("rgb", "")
+    if need("permissions"):
+        try:
+            permissions = (mail or account).request("GetPermission", {})
+            settings["permissions"] = as_list(permissions.get("ace"))
+        except Exception as exc:  # noqa: BLE001
+            settings.setdefault("warnings", []).append(
+                "permissions: %s" % describe_error(exc)
+            )
     return settings
 
 
