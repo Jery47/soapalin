@@ -162,7 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
             "      Cree les domaines sur dst1.\n"
             "  soapalin provision all --type cos --from src1 --to dst1\n"
             "      Cree toutes les COS sur dst1.\n"
-            "  soapalin provision users.csv --type account --from src1 --to dst1 --password Secret!\n"
+            "  soapalin provision users.csv --type account --from src1 --to dst1 --password <PASSWORD>\n"
             "      Cree les comptes avec un mot de passe fixe.\n"
             "  soapalin provision users.csv --type account --from src1 --to dst1 --random-password --keep-admin\n"
             "      Cree les comptes avec des mots de passe aleatoires et leurs droits admin.\n"

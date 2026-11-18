@@ -19,24 +19,43 @@ ressources calendrier et de listes de distribution.
 
 ## Installation
 
-Prérequis : Python 3.8 ou supérieur.
+Prerequis : Python 3.8 ou superieur.
+
+### Linux / Zimbra
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
-soapalin --help
+
+# ou installation dediee sur le serveur Zimbra
+sudo ./install.sh
 ```
 
-Pour le développement :
+### Windows
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e .
+
+# ou installation dediee
+.\install.ps1
+```
+
+### Developpement
 
 ```bash
 python -m pip install -e ".[dev]"
+pytest
+ruff check soaplun tests
+mypy soaplun
 ```
 
 Les scripts `install.sh`, `install.ps1`, `uninstall.sh` et `uninstall.ps1`
-permettent une installation dédiée sur un serveur Zimbra ou sous Windows.
+permettent une installation dediee sur un serveur Zimbra ou sous Windows.
 
 ## Démarrage rapide
 
@@ -51,7 +70,7 @@ soapalin provision users.csv \
   --type account \
   --from src1 \
   --to dst1 \
-  --password "Secret!"
+  --password "<PASSWORD>"
 
 soapalin migrate users.csv \
   --type account \
@@ -66,7 +85,7 @@ soapalin migrate users.csv \
 soapalin server add src1 --role source
 soapalin server add src1 --role source \
   --host zimbra-src.local --port 7071 \
-  --admin admin --password "Secret!" --no-test
+  --admin admin --password "<PASSWORD>" --no-test
 soapalin server list
 soapalin server show src1
 soapalin server test src1
@@ -90,7 +109,7 @@ soapalin provision all --type cos --from src1 --to dst1
 soapalin provision lists.csv --type dl --from src1 --to dst1
 soapalin provision resources.csv --type resource --from src1 --to dst1
 
-soapalin provision users.csv --type account --from src1 --to dst1 --password "Secret!"
+soapalin provision users.csv --type account --from src1 --to dst1 --password "<PASSWORD>"
 soapalin provision users.csv --type account --from src1 --to dst1 --password-file pwd.txt
 soapalin provision users.csv --type account --from src1 --to dst1 --random-password --keep-admin
 ```

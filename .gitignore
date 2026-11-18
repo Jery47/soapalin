@@ -40,3 +40,5 @@ Thumbs.db
 .idea/
 # Local coding-agent instructions
 AGENTS.md
+MIGRATION_CLI.md
+REFACTOR_NOTES.md

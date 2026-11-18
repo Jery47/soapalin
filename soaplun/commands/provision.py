@@ -24,7 +24,7 @@ def add_parser(subparsers):
             "  resource : ressources calendrier\n"
             "\n"
             "Exemples:\n"
-            "  soapalin provision users.csv --type account --from src1 --to dst1 --password Secret!\n"
+            "  soapalin provision users.csv --type account --from src1 --to dst1 --password <PASSWORD>\n"
             "  soapalin provision domains.csv --type domain --from src1 --to dst1\n"
             "  soapalin provision all --type cos --from src1 --to dst1\n"
         ),

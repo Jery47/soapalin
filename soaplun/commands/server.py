@@ -13,7 +13,7 @@ def add_parser(subparsers):
         epilog=(
             "Exemples:\n"
             "  soapalin server add src1 --role source\n"
-            "  soapalin server add src1 --role source --host zimbra-src.local --admin admin --password Secret!\n"
+            "  soapalin server add src1 --role source --host zimbra-src.local --admin admin --password <PASSWORD>\n"
             "  soapalin server list\n"
             "  soapalin server test src1\n"
             "  soapalin server inventory src1\n"
