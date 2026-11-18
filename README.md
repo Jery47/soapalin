@@ -281,3 +281,18 @@ ruff check soaplun tests
 mypy
 python -m unittest discover -s tests
 ```
+
+## Int?gration GitHub
+
+Le d?p?t est pr?t pour GitHub Actions :
+
+```text
+.github/workflows/ci.yml       tests, lint et build sur push/PR
+.github/ISSUE_TEMPLATE/        mod?les de bug et de demande
+.github/pull_request_template.md
+CONTRIBUTING.md
+.gitattributes
+.editorconfig
+```
+
+La CI teste Python 3.8 ? 3.14 sous Linux, ainsi qu?une ex?cution Windows, puis lance `ruff`, `mypy` et construit les artefacts `dist/`.
