@@ -7,6 +7,13 @@ from typing import Any, Callable, Dict, List, Optional
 
 from . import config as config_module
 from .connections import ZimbraSession, describe_error
+from .inventory_folders import (  # noqa: F401
+    collect_folder_bundle,
+    collect_folder_colors,
+    collect_folders,
+    collect_mountpoints,
+    collect_outgoing_shares,
+)
 from .inventory_store import (
     SNAPSHOT_KEEP,
     _is_index_file,
@@ -225,20 +232,23 @@ def _fetch_account(
     attrs = attrs_to_dict(account)
 
     effective: Dict[str, Any] = {}
-    try:
-        eff_payload = session.request_single(
-            "GetAccount",
-            {
-                "account": selector,
-                "applyCos": "1",
-                "attrs": "zimbraCOSId,zimbraMailHost,zimbraMailQuota",
-            },
-        )
-        eff_account = unwrap(eff_payload, "account")
-        if isinstance(eff_account, dict):
-            effective = attrs_to_dict(eff_account)
-    except Exception:
-        effective = {}
+    # Most accounts expose COS and mail host directly. Only query effective
+    # attributes when the base account data is incomplete.
+    if not (attrs.get("zimbraCOSId") and attrs.get("zimbraMailHost")):
+        try:
+            eff_payload = session.request_single(
+                "GetAccount",
+                {
+                    "account": selector,
+                    "applyCos": "1",
+                    "attrs": "zimbraCOSId,zimbraMailHost,zimbraMailQuota",
+                },
+            )
+            eff_account = unwrap(eff_payload, "account")
+            if isinstance(eff_account, dict):
+                effective = attrs_to_dict(eff_account)
+        except Exception:
+            effective = {}
 
     stats: Dict[str, Any] = {}
     if with_stats:
@@ -268,8 +278,9 @@ def _fetch_account(
         "attrs": attrs,
         "aliases": [alias for alias in aliases if alias],
         "effective": effective,
-        "cos_id": effective.get("zimbraCOSId", ""),
-        "mail_host": effective.get("zimbraMailHost", ""),
+        "cos_id": effective.get("zimbraCOSId") or attrs.get("zimbraCOSId", ""),
+        "mail_host": effective.get("zimbraMailHost")
+        or attrs.get("zimbraMailHost", ""),
         "is_admin": bool_attr(attrs, "zimbraIsAdminAccount"),
         "is_system": bool_attr(attrs, "zimbraIsSystemAccount"),
         "is_virtual": bool_attr(attrs, "zimbraIsExternalVirtualAccount"),
@@ -519,125 +530,6 @@ def collect_resources(
 # ----------------------------------------------------------------------
 # Deep settings (per account, read from source at apply time)
 # ----------------------------------------------------------------------
-def _walk_folders(node: Any) -> List[Dict[str, Any]]:
-    folders: List[Dict[str, Any]] = []
-    if not isinstance(node, dict):
-        return folders
-    folders.append(node)
-    for child in as_list(node.get("folder")):
-        folders.extend(_walk_folders(child))
-    return folders
-
-
-def collect_folders(
-    client: Any, colored_only: bool = True, include_root: bool = False
-) -> List[Dict[str, Any]]:
-    payload = client.request(
-        "GetFolder", {"folder": {"path": "/"}, "depth": "20"}
-    )
-    root = payload.get("folder") if isinstance(payload, dict) else None
-    folders: List[Dict[str, Any]] = []
-    for folder in _walk_folders(root):
-        path = str(folder.get("absFolderPath") or "")
-        color = folder.get("color")
-        rgb = folder.get("rgb")
-        if not path:
-            continue
-        if path == "/" and not include_root:
-            continue
-        if colored_only and not color and not rgb:
-            continue
-        folders.append(
-            {
-                "path": path,
-                "id": str(folder.get("id") or ""),
-                "name": str(folder.get("name") or ""),
-                "view": str(folder.get("view") or ""),
-                "color": str(color) if color not in {None, ""} else "",
-                "rgb": str(rgb) if rgb not in {None, ""} else "",
-                "acl": folder.get("acl") or {},
-            }
-        )
-    return folders
-
-
-def collect_folder_colors(client: Any) -> List[Dict[str, Any]]:
-    return collect_folders(client, colored_only=True)
-
-
-def _walk_tree(node: Any) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
-    if not isinstance(node, dict):
-        return items
-    items.append(node)
-    for child in as_list(node.get("folder")) + as_list(node.get("link")):
-        items.extend(_walk_tree(child))
-    return items
-
-
-def collect_mountpoints(client: Any) -> List[Dict[str, Any]]:
-    """Return accepted share mountpoints with their local folder path."""
-    payload = client.request(
-        "GetFolder", {"folder": {"path": "/"}, "depth": "20"}
-    )
-    root = payload.get("folder") if isinstance(payload, dict) else None
-    items: List[Dict[str, Any]] = []
-    for node in _walk_tree(root):
-        path = str(node.get("absFolderPath") or "")
-        if not path or path == "/" or not (node.get("rid") or node.get("zid")):
-            continue
-        items.append(
-            {
-                "path": path,
-                "name": str(node.get("name") or ""),
-                "id": str(node.get("id") or ""),
-                "rid": str(node.get("rid") or ""),
-                "zid": str(node.get("zid") or ""),
-                "view": str(node.get("view") or ""),
-                "perm": str(node.get("perm") or ""),
-                "color": str(node.get("color") or ""),
-                "rgb": str(node.get("rgb") or ""),
-            }
-        )
-    return items
-
-
-def collect_outgoing_shares(
-    client: Any, owner_email: str = ""
-) -> List[Dict[str, Any]]:
-    shares: List[Dict[str, Any]] = []
-    seen = set()
-    for folder in collect_folders(
-        client, colored_only=False, include_root=True
-    ):
-        grants = as_list((folder.get("acl") or {}).get("grant"))
-        for grant in grants:
-            if not isinstance(grant, dict):
-                continue
-            grantee = str(grant.get("d") or "").strip()
-            rights = str(grant.get("perm") or grant.get("right") or "").strip()
-            grantee_type = str(grant.get("gt") or "usr")
-            if not rights:
-                continue
-            if not grantee and grantee_type not in {"pub", "all"}:
-                continue
-            if owner_email and grantee.lower() == owner_email.lower():
-                continue
-            key = (folder["path"], grantee.lower(), grantee_type, rights)
-            if key in seen:
-                continue
-            seen.add(key)
-            shares.append(
-                {
-                    "folderPath": folder["path"],
-                    "granteeName": grantee,
-                    "granteeType": grantee_type,
-                    "rights": rights,
-                }
-            )
-    return shares
-
-
 def collect_tags(client: Any) -> List[Dict[str, Any]]:
     response = client.request("GetTag", {}) or {}
     tags: List[Dict[str, Any]] = []
@@ -735,14 +627,13 @@ def collect_account_settings(session: ZimbraSession, email: str) -> Dict[str, An
         settings.setdefault("warnings", []).append(
             "attributs de compte: %s" % describe_error(exc)
         )
-    settings["folders"] = safe(
-        "folders", lambda: collect_folder_colors(mail) if mail else [], []
+    folder_bundle = safe(
+        "folders",
+        lambda: collect_folder_bundle(mail, email) if mail else {},
+        {},
     )
-    settings["all_folders"] = safe(
-        "all folders",
-        lambda: collect_folders(mail, colored_only=False) if mail else [],
-        [],
-    )
+    settings["folders"] = folder_bundle.get("folders", [])
+    settings["all_folders"] = folder_bundle.get("all_folders", [])
     settings["tags"] = safe(
         "tags", lambda: collect_tags(mail) if mail else [], []
     )
@@ -765,17 +656,9 @@ def collect_account_settings(session: ZimbraSession, email: str) -> Dict[str, An
     lists = safe("whitelist", account.get_white_black_lists, {}) or {}
     settings["whitelist"] = _address_list(lists.get("whiteList"))
     settings["blacklist"] = _address_list(lists.get("blackList"))
-    settings["shares_out"] = safe(
-        "shares out",
-        lambda: collect_outgoing_shares(mail, email) if mail else [],
-        [],
-    )
+    settings["shares_out"] = folder_bundle.get("shares_out", [])
     settings["mountpoints"] = safe("shares in", account.get_share_info, [])
-    mount_links = safe(
-        "mount links",
-        lambda: collect_mountpoints(mail) if mail else [],
-        [],
-    )
+    mount_links = folder_bundle.get("mountpoints", [])
     links_by_id = {
         str(link.get("id")): link for link in mount_links if link.get("id")
     }
@@ -893,6 +776,12 @@ def collect_snapshot(
     steps_total = 6
     done = 0
     progress_lock = threading.Lock()
+    phase_local = threading.local()
+
+    def phase_session():
+        if not hasattr(phase_local, "session"):
+            phase_local.session = session_factory()
+        return phase_local.session
 
     def report(label: str) -> None:
         nonlocal done
@@ -908,7 +797,7 @@ def collect_snapshot(
             if cancel is not None and cancel.is_set():
                 return label, key, None
             try:
-                active = session if use_shared else session_factory()
+                active = session if use_shared else phase_session()
                 return label, key, collector(active)
             except Exception as exc:  # noqa: BLE001
                 snapshot["warnings"].append(

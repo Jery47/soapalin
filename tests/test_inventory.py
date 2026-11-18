@@ -15,9 +15,11 @@ from soaplun.inventory import (
     cleanup_snapshots,
     collect_accounts,
     collect_cos,
+    collect_folder_bundle,
     entry_name,
     latest_snapshot,
     list_snapshots,
+    load_snapshot,
     load_snapshot_index,
     snapshot_index_path,
     unwrap,
@@ -161,6 +163,49 @@ class DomainListingTests(unittest.TestCase):
         self.assertEqual(items, [{"name": "default", "id": "1", "attrs": {}}])
 
 
+class FolderBundleTests(unittest.TestCase):
+    def test_bundle_uses_one_folder_request(self):
+        class Client:
+            def __init__(self):
+                self.calls = 0
+
+            def request(self, name, content=None):
+                self.calls += 1
+                return {
+                    "folder": {
+                        "absFolderPath": "/",
+                        "id": "1",
+                        "acl": {"grant": {"perm": "r", "gt": "pub"}},
+                        "folder": [
+                            {
+                                "absFolderPath": "/Calendar",
+                                "id": "10",
+                                "name": "Calendar",
+                                "color": "5",
+                                "view": "appointment",
+                            }
+                        ],
+                        "link": [
+                            {
+                                "absFolderPath": "/Shared",
+                                "id": "20",
+                                "name": "Shared",
+                                "rid": "10",
+                                "zid": "owner",
+                            }
+                        ],
+                    }
+                }
+
+        client = Client()
+        bundle = collect_folder_bundle(client, "user@example.com")
+        self.assertEqual(client.calls, 1)
+        self.assertEqual([f["path"] for f in bundle["all_folders"]], ["/Calendar"])
+        self.assertEqual([f["path"] for f in bundle["folders"]], ["/Calendar"])
+        self.assertEqual(bundle["shares_out"][0]["folderPath"], "/")
+        self.assertEqual(bundle["mountpoints"][0]["path"], "/Shared")
+
+
 class AccountCollectionTests(unittest.TestCase):
     def test_parallel_collection_uses_worker_sessions(self):
         entries = [{"name": "u%d@example.com" % index} for index in range(8)]
@@ -236,6 +281,27 @@ class SnapshotProfileTests(unittest.TestCase):
             index = load_snapshot_index(site_latest["path"])
             self.assertEqual(index["host"], "host-site2")
             self.assertEqual(index["accounts"], [])
+
+
+class SnapshotCacheTests(unittest.TestCase):
+    def test_snapshot_is_cached(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            path = write_snapshot(
+                config,
+                "source",
+                {
+                    "version": 1,
+                    "side": "source",
+                    "host": "src",
+                    "created_at": "2026-01-01T10:00:00",
+                    "counts": {},
+                },
+                profile="default",
+            )
+            first = load_snapshot(path)
+            second = load_snapshot(path)
+            self.assertIs(first, second)
 
 
 class SnapshotCleanupTests(unittest.TestCase):

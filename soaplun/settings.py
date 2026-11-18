@@ -32,21 +32,25 @@ from .settings_common import (
 )
 from .settings_copy import (
     _address_values,
-    _grantee_exists,
     copy_account_attributes,
     copy_cos,
-    copy_empty_folders,
     copy_filters,
-    copy_folder_colors,
     copy_identities,
-    copy_incoming_shares,
-    copy_outgoing_shares,
     copy_permissions,
     copy_preferences,
     copy_signatures,
     copy_tags,
     copy_white_black_lists,
+)
+from .settings_folders import (
+    copy_empty_folders,
+    copy_folder_colors,
     resolve_folder_id,
+)
+from .settings_shares import (
+    _grantee_exists,
+    copy_incoming_shares,
+    copy_outgoing_shares,
 )
 
 __all__ = [

@@ -344,46 +344,22 @@ def _run_import(
             for error in (report.get("errors") or [])[:20]:
                 cli._out("ERREUR TAG : %s" % error, file=sys.stderr)
             failures += 1 if summary.get("failed") else 0
-    folder_parts: List[str] = [
-        value for value in ("folder", "color") if value in steps
-    ]
-    if folder_parts:
-        failures += _copy_settings_parts(
-            config,
-            plan,
-            users,
-            options,
-            args,
-            cancel,
-            folder_parts,
-            "Dossiers",
-        )[0]
+    combined_parts: List[str] = []
+    if "folder" in steps:
+        combined_parts.append("folder")
+    if "color" in steps:
+        combined_parts.append("color")
     if "settings" in steps:
-        failures += _copy_settings_parts(
-            config,
-            plan,
-            users,
-            options,
-            args,
-            cancel,
-            ["settings", "prefs", "folders", "attributes"],
-            "Reglages",
-        )[0]
+        combined_parts.extend(["settings", "prefs", "folders", "attributes"])
     if "filters" in steps:
-        parts = ["filters"]
-        if "lists" in steps:
-            parts.append("lists")
-        failures += _copy_settings_parts(
-            config,
-            plan,
-            users,
-            options,
-            args,
-            cancel,
-            parts,
-            "Filtres & listes",
-        )[0]
+        combined_parts.append("filters")
+    if "lists" in steps:
+        combined_parts.append("lists")
     if "shares" in steps:
+        combined_parts.append("shares")
+    if "permissions" in steps:
+        combined_parts.append("permissions")
+    if combined_parts:
         failure, report = _copy_settings_parts(
             config,
             plan,
@@ -391,8 +367,8 @@ def _run_import(
             options,
             args,
             cancel,
-            ["shares"],
-            "Partages",
+            combined_parts,
+            "Reglages & partages",
         )
         failures += failure
         ignored = int(report.get("ignored_shares") or 0)
@@ -403,17 +379,6 @@ def _run_import(
                 "une fois tous les comptes crees." % ignored,
                 file=sys.stderr,
             )
-    if "permissions" in steps:
-        failures += _copy_settings_parts(
-            config,
-            plan,
-            users,
-            options,
-            args,
-            cancel,
-            ["permissions"],
-            "Droits",
-        )[0]
     return 2 if failures else 0
 
 

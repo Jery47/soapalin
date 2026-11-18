@@ -21,6 +21,8 @@ _INDEX_LOCK = threading.RLock()
 
 
 _INDEX_CACHE: Dict[str, Dict[str, Any]] = {}
+_SNAPSHOT_CACHE: Dict[Any, Dict[str, Any]] = {}
+_SNAPSHOT_CACHE_LIMIT = 4
 
 
 _INDEX_CACHE_LIMIT = 64
@@ -73,8 +75,10 @@ def write_snapshot(
     payload["profile"] = profile
     payload["profile_name"] = config.profile_name(profile)
     payload["path"] = str(path)
-    storage.write_json_atomic(path, payload, indent=1)
+    storage.write_json_atomic(path, payload, indent=None)
     write_snapshot_index(path, payload)
+    with _INDEX_LOCK:
+        _SNAPSHOT_CACHE.clear()
     return path
 
 
@@ -231,14 +235,31 @@ def list_snapshots(
     return items
 
 
+def _snapshot_cache_key(path: Path):
+    stat = path.stat()
+    return (str(path), stat.st_mtime_ns, stat.st_size)
+
+
 def load_snapshot(path: Union[Path, str]) -> Dict[str, Any]:
     path = Path(path)
+    with _INDEX_LOCK:
+        try:
+            key = _snapshot_cache_key(path)
+        except OSError:
+            key = None
+        if key is not None and key in _SNAPSHOT_CACHE:
+            return _SNAPSHOT_CACHE[key]
     with path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, dict):
         raise ValueError("Invalid snapshot file: %s" % path)
     validate_snapshot(payload)
     payload.setdefault("path", str(path))
+    with _INDEX_LOCK:
+        if key is not None:
+            if len(_SNAPSHOT_CACHE) >= _SNAPSHOT_CACHE_LIMIT:
+                _SNAPSHOT_CACHE.clear()
+            _SNAPSHOT_CACHE[key] = payload
     return payload
 
 
