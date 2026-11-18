@@ -16,25 +16,27 @@ htmlcov/
 venv/
 
 # Runtime configuration and data
-config/config.json
-config/config.json.bak-*
-config/secret.key
-config/servers/
-data/
-temp/
+/config/
+/data/
+/temp/
+/reports/
 *.log
+*.tgz
+*.part
+*.tmp
+*.bak
+*.bak-*
+
+# Local imports and exports
+*.csv
+*.xlsx
+*.zip
+*.7z
 
 # OS / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# Local test data
-/temp.csv
-/jeanpaul.csv
-/all_user.csv
-/christophe.csv
-/thierry.csv
-# Local CSV inputs
-/*.csv
+# Local coding-agent instructions
+AGENTS.md

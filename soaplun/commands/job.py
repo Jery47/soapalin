@@ -15,8 +15,8 @@ def add_parser(subparsers):
             "  soapalin job list --running\n"
             "  soapalin job list --failed\n"
             "  soapalin job list --status running,failed\n"
-            "  soapalin job status 20261110-120305-29c057 --tail 30\n"
-            "  soapalin job log 20261110-120305-29c057\n"
+            "  soapalin job status JOB_ID --tail 30\n"
+            "  soapalin job log JOB_ID\n"
             "  soapalin job live\n"
             "  soapalin job stop all\n"
         ),

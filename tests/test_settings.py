@@ -607,7 +607,7 @@ class OutgoingShareTests(unittest.TestCase):
             if name == "GetFolder":
                 payload["folder"]["folder"][0]["acl"] = {
                     "grant": {
-                        "d": "eric.dhorne@sdis21.org",
+                        "d": "owner@example.com",
                         "gt": "usr",
                         "perm": "r",
                     }
@@ -616,14 +616,14 @@ class OutgoingShareTests(unittest.TestCase):
 
         client.request = request
         shares = inventory_module.collect_outgoing_shares(
-            client, "claire.genty@sdis21.org"
+            client, "user@example.com"
         )
         self.assertEqual(
             shares,
             [
                 {
                     "folderPath": "/Calendar",
-                    "granteeName": "eric.dhorne@sdis21.org",
+                    "granteeName": "owner@example.com",
                     "granteeType": "usr",
                     "rights": "r",
                 }
@@ -639,7 +639,7 @@ class OutgoingShareTests(unittest.TestCase):
             if name == "GetFolder":
                 payload["folder"]["acl"] = {
                     "grant": {
-                        "d": "eric.dhorne@sdis21.org",
+                        "d": "owner@example.com",
                         "gt": "usr",
                         "perm": "r",
                     }
@@ -648,7 +648,7 @@ class OutgoingShareTests(unittest.TestCase):
 
         client.request = request
         shares = inventory_module.collect_outgoing_shares(
-            client, "claire.genty@sdis21.org"
+            client, "user@example.com"
         )
         self.assertEqual(shares[0]["folderPath"], "/")
         self.assertEqual(shares[0]["rights"], "r")
@@ -667,7 +667,7 @@ class OutgoingShareTests(unittest.TestCase):
 
         client.request = request
         shares = inventory_module.collect_outgoing_shares(
-            client, "claire.genty@sdis21.org"
+            client, "user@example.com"
         )
         self.assertEqual(
             shares,
@@ -697,7 +697,7 @@ class OutgoingShareTests(unittest.TestCase):
                 ]
             },
             destination,
-            "claire.genty@sdis21.org",
+            "user@example.com",
             dry_run=False,
             options={"domain_map": {}},
             destination_session=self.Session(),
@@ -746,7 +746,7 @@ class AccountAttributeTests(unittest.TestCase):
                 }
             },
             destination,
-            "frederic.perret@sdis21.org",
+            "other@example.com",
             dry_run=False,
             ignore=[],
         )
@@ -767,7 +767,7 @@ class CosTests(unittest.TestCase):
 
             def request_single(self, name, content=None):
                 if name == "GetCos":
-                    return {"cos": {"id": "dest-cos", "name": "standard-sdis21"}}
+                    return {"cos": {"id": "dest-cos", "name": "standard"}}
                 if name == "GetAccount":
                     return {
                         "account": {
@@ -783,7 +783,7 @@ class CosTests(unittest.TestCase):
 
         destination = Destination()
         result = settings_module.copy_cos(
-            {"cos_name": "standard-sdis21"},
+            {"cos_name": "standard"},
             destination,
             "u@example.com",
             dry_run=False,

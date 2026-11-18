@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Desinstalle la CLI Soap a l'un du serveur Zimbra.
+# Desinstalle la CLI soapalin du serveur Zimbra.
 #
 #   sudo ./uninstall.sh              # retire le code et le venv
 #                                    # conserve config/ et data/
@@ -48,7 +48,7 @@ esac
 
 if [[ "${PURGE}" -eq 1 ]]; then
   [[ -d "${APP_DIR}/soaplun" ]] \
-    || die "${APP_DIR} ne ressemble pas a une installation de Soap a l'un ; --purge annule."
+    || die "${APP_DIR} ne ressemble pas a une installation de soapalin ; --purge annule."
   warn "Mode --purge : la configuration et TOUTES les donnees seront supprimees."
 else
   warn "La configuration (${APP_DIR}/config) et les donnees (${APP_DIR}/data) seront conservees."

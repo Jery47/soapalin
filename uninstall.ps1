@@ -1,7 +1,7 @@
 #requires -Version 5.0
 <#
 .SYNOPSIS
-    Desinstalle la CLI Soap a l'un.
+    Desinstalle la CLI soapalin.
 
 .DESCRIPTION
     Par defaut, le venv est supprime et config\ / data\ sont conserves.

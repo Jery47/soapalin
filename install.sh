@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Soap a l'un CLI on a Zimbra server.
+# Install soapalin CLI on a Zimbra server.
 #
 #   sudo ./install.sh
 #
@@ -16,11 +16,11 @@ die() { printf '\n\033[1;31mErreur:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [[ "${EUID}" -eq 0 ]] || die "Ce script doit etre lance en root (sudo ./install.sh)."
 id zimbra >/dev/null 2>&1 || die "L'utilisateur systeme 'zimbra' est introuvable. Ce script doit tourner sur un serveur Zimbra."
-command -v "${PYTHON_BIN}" >/dev/null 2>&1 || die "${PYTHON_BIN} est introuvable. Installez Python 3.9+ ou definissez PYTHON_BIN."
+command -v "${PYTHON_BIN}" >/dev/null 2>&1 || die "${PYTHON_BIN} est introuvable. Installez Python 3.8+ ou definissez PYTHON_BIN."
 
 PY_VERSION="$("${PYTHON_BIN}" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null || echo "inconnue")"
-"${PYTHON_BIN}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 6) else 1)' \
-  || die "Python 3.6+ est requis (3.9+ recommande). Version detectee : ${PY_VERSION}."
+"${PYTHON_BIN}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' \
+  || die "Python 3.8+ est requis. Version detectee : ${PY_VERSION}."
 
 log "Installation dans ${APP_DIR}"
 mkdir -p "${APP_DIR}/config" "${APP_DIR}/data"
@@ -48,12 +48,7 @@ log "Python du venv : ${VENV_VERSION}"
 if ! "${VENV_PY}" -m pip --version >/dev/null 2>&1; then
   "${VENV_PY}" -m ensurepip --upgrade || die "pip est absent du venv et ensurepip a echoue."
 fi
-if "${VENV_PY}" -c 'import sys; sys.exit(0 if sys.version_info < (3, 8) else 1)'; then
-  log "Python 3.6/3.7 detecte : dependances de compatibilite."
-  "${VENV_PY}" -m pip install --upgrade "pip<22" || die "Impossible de mettre a jour pip."
-else
-  "${VENV_PY}" -m pip install --upgrade pip || die "Impossible de mettre a jour pip."
-fi
+"${VENV_PY}" -m pip install --upgrade pip || die "Impossible de mettre a jour pip."
 "${VENV_PY}" -m pip install -r "${APP_DIR}/requirements.txt" \
   || die "L'installation des dependances a echoue."
 chown -R zimbra:zimbra "${APP_DIR}/venv"

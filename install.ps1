@@ -1,7 +1,7 @@
 #requires -Version 5.0
 <#
 .SYNOPSIS
-    Installe la CLI Soap a l'un sur Windows.
+    Installe la CLI soapalin sur Windows.
 
 .DESCRIPTION
     Cree un venv Python et installe les dependances de la CLI. Aucune interface
@@ -65,7 +65,7 @@ function Find-Python {
         if ($LASTEXITCODE -ne 0 -or -not $output) { continue }
         $candidate = ([string]($output | Select-Object -First 1)).Trim()
         $version = Get-PythonVersion $candidate
-        if ($version -and $version -ge [version]"3.6") { return $candidate }
+        if ($version -and $version -ge [version]"3.8") { return $candidate }
     }
     return $null
 }
@@ -94,11 +94,11 @@ if ($InstallDir.TrimEnd('\') -eq $env:SystemRoot.TrimEnd('\')) {
 Write-Step "Recherche de Python"
 $PythonExe = Find-Python $Python
 if (-not $PythonExe) {
-    Fail "Python 3.6+ introuvable. Installez Python 3.9+ depuis python.org, puis relancez ce script."
+    Fail "Python 3.8+ introuvable. Installez Python 3.8+ depuis python.org, puis relancez ce script."
 }
 $PythonVersion = Get-PythonVersion $PythonExe
-if (-not $PythonVersion -or $PythonVersion -lt [version]"3.6") {
-    Fail "Python 3.6+ est requis (3.9+ recommande). Version detectee : $PythonVersion"
+if (-not $PythonVersion -or $PythonVersion -lt [version]"3.8") {
+    Fail "Python 3.8+ est requis. Version detectee : $PythonVersion"
 }
 Write-Host "Python $PythonVersion : $PythonExe"
 
@@ -140,8 +140,8 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 }
 
 $venvVersion = Get-PythonVersion $VenvPython
-if (-not $venvVersion -or $venvVersion -lt [version]"3.6") {
-    Fail "Le virtualenv n'utilise pas Python 3.6+."
+if (-not $venvVersion -or $venvVersion -lt [version]"3.8") {
+    Fail "Le virtualenv n'utilise pas Python 3.8+."
 }
 Write-Host "Python du venv : $venvVersion"
 
@@ -152,11 +152,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Step "Mise a jour de pip"
-if ($venvVersion -lt [version]"3.8") {
-    & $VenvPython -m pip install --upgrade "pip<22"
-} else {
-    & $VenvPython -m pip install --upgrade pip
-}
+& $VenvPython -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) { Fail "Impossible de mettre a jour pip." }
 
 Write-Step "Installation des dependances"

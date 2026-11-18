@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI entry point for Soap a l'un."""
+"""CLI entry point for soapalin."""
 
 from soaplun.cli import main
 

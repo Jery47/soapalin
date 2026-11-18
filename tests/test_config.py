@@ -194,9 +194,9 @@ class ConfigTests(unittest.TestCase):
 
     def test_connection_form_cleans_pasted_url(self):
         self.config.apply_connection_form(
-            "source", {"host": " https://10.1.19.37:7071/zimbra/ ", "admin_login": "admin@x.fr"}
+            "source", {"host": " https://192.0.2.10:7071/zimbra/ ", "admin_login": "admin@x.fr"}
         )
-        self.assertEqual(self.config.connection("source")["store_host"], "10.1.19.37")
+        self.assertEqual(self.config.connection("source")["store_host"], "192.0.2.10")
         self.config.apply_connection_form("source", {"host": "zimbra.example.com:443"})
         self.assertEqual(self.config.connection("source")["store_host"], "zimbra.example.com")
 
@@ -212,7 +212,7 @@ class CleanHostTests(unittest.TestCase):
             "": "",
             None: "",
             "[::1]:7071": "::1",
-            "10.1.19.37": "10.1.19.37",
+            "192.0.2.10": "192.0.2.10",
         }
         for raw, expected in cases.items():
             self.assertEqual(clean_host(raw), expected, raw)
@@ -226,14 +226,14 @@ class ConnectionOverrideTests(unittest.TestCase):
         merged = _merge_test_overrides(
             config.connection("source"),
             {
-                "host": "https://10.1.19.37/",
+                "host": "https://192.0.2.10/",
                 "admin_port": "7071",
                 "admin_login": "admin@example.com",
                 "admin_password": "",
                 "verify_ssl": "1",
             },
         )
-        self.assertEqual(merged["store_host"], "10.1.19.37")
+        self.assertEqual(merged["store_host"], "192.0.2.10")
         self.assertEqual(merged["store_admin_port"], 7071)
         self.assertTrue(merged["verify_ssl"])
         self.assertEqual(merged["admin_password"], "saved-pass")

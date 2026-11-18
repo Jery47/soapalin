@@ -1,4 +1,4 @@
-"""Command line interface for Soap a l'un."""
+"""Command line interface for soapalin."""
 
 import argparse
 import datetime
