@@ -75,8 +75,10 @@ soapalin server list
 soapalin server show src1
 soapalin server test src1
 soapalin server inventory src1
-soapalin server inventory src1 --no-stats
-soapalin server inventory src1 --no-stats --parallelism 4
+soapalin server inventory src1
+soapalin server inventory src1 --stats
+soapalin server inventory src1
+soapalin server inventory src1 --stats --parallelism 4
 soapalin server inventory src1 --follow
 soapalin server rename src1 zimbra-prod
 soapalin server remove src1

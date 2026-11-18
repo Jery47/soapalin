@@ -17,7 +17,7 @@ def add_parser(subparsers):
             "  soapalin server list\n"
             "  soapalin server test src1\n"
             "  soapalin server inventory src1\n"
-            "  soapalin server inventory src1 --no-stats --parallelism 4\n"
+            "  soapalin server inventory src1 --stats --parallelism 4\n"
             "  soapalin server inventory src1 --follow\n"
         ),
     )
@@ -42,9 +42,14 @@ def add_parser(subparsers):
         item.add_argument("label")
         if name == "inventory":
             item.add_argument(
+                "--stats",
+                action="store_true",
+                help="collecter les statistiques GetMailbox (plus lent)",
+            )
+            item.add_argument(
                 "--no-stats",
                 action="store_true",
-                help="ne pas interroger GetMailbox pour chaque compte",
+                help="compatibilite : ne pas collecter les statistiques",
             )
             item.add_argument(
                 "--parallelism",
@@ -184,7 +189,7 @@ def run(args):
         return cli._run_server_inventory(
             config,
             args.label,
-            with_stats=not args.no_stats,
+            with_stats=bool(args.stats) and not args.no_stats,
             parallelism=args.parallelism,
             cancel=cli._CONTEXT.cancel or threading.Event(),
         )

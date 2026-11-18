@@ -57,6 +57,7 @@ __all__ = [
 ]
 
 _QUIET = False
+_PROGRESS_VERBOSE = False
 _CONTEXT = RunContext()
 
 
@@ -152,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
             "      Affiche les serveurs configures.\n"
             "  soapalin server test src1\n"
             "      Teste la connexion au serveur source.\n"
-            "  soapalin server inventory src1 --no-stats --parallelism 4\n"
+            "  soapalin server inventory src1 --stats --parallelism 4\n"
             "  soapalin server inventory src1 --follow\n"
             "      Inventorie src1 sans GetMailbox, avec 4 comptes en parallele.\n"
             "\n"
@@ -311,7 +312,7 @@ def _run_server_test(config, label: str) -> int:
 def _run_server_inventory(
     config,
     label: str,
-    with_stats: bool = True,
+    with_stats: bool = False,
     parallelism: int = 1,
     cancel=None,
 ) -> int:
@@ -467,6 +468,8 @@ def main(argv: Optional[Sequence[str]] = None, _from_job: bool = False) -> int:
         return _run_job_worker(args.job_worker)
     global _QUIET
     _QUIET = bool(args.quiet)
+    global _PROGRESS_VERBOSE
+    _PROGRESS_VERBOSE = bool(args.verbose or args.debug)
     level = logging.DEBUG if (args.debug or args.verbose) else logging.WARNING
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("soapalin").debug("argument(s): %s", vars(args))

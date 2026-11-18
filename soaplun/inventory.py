@@ -780,7 +780,7 @@ def collect_snapshot(
     config: config_module.Config,
     side: str,
     progress: Progress = None,
-    with_stats: bool = True,
+    with_stats: bool = False,
     profile: Optional[str] = None,
     cancel=None,
     parallelism: int = 1,

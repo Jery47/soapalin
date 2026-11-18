@@ -5,6 +5,7 @@ import datetime
 import io
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -120,10 +121,23 @@ def _build_plan(
     return plan
 
 
+_PROGRESS_LAST = 0.0
+
+
 def _progress(done: int, total: int, message: str, detail=None) -> None:
-    if message:
-        with cli._CONTEXT.lock:
-            cli._out("[%s/%s] %s" % (done, total, message), flush=True)
+    global _PROGRESS_LAST
+    if not message:
+        return
+    now = time.monotonic()
+    if (
+        not getattr(cli, "_PROGRESS_VERBOSE", False)
+        and done not in (0, total)
+        and now - _PROGRESS_LAST < 0.25
+    ):
+        return
+    _PROGRESS_LAST = now
+    with cli._CONTEXT.lock:
+        cli._out("[%s/%s] %s" % (done, total, message), flush=True)
 
 
 def _print_summary(title: str, report: Dict[str, Any]) -> int:
