@@ -373,7 +373,7 @@ def _run_job_worker(spec_path: str) -> int:
         _out("ERREUR job : specification illisible : %s" % exc, file=sys.stderr)
         return 1
     base_dir = spec.get("base_dir") or str(Path(spec_path).resolve().parent)
-    os.environ["SOAPLUN_HOME"] = str(base_dir)
+    os.environ["SOAPALIN_HOME"] = str(base_dir)
     cwd = spec.get("cwd")
     if cwd:
         try:
@@ -384,7 +384,7 @@ def _run_job_worker(spec_path: str) -> int:
     store = jobs_module.JobStore(config)
     job_id = str(spec.get("id") or "")
     if job_id:
-        os.environ["SOAPLUN_JOB_ID"] = job_id
+        os.environ["SOAPALIN_JOB_ID"] = job_id
     store.update(
         job_id,
         status="running",

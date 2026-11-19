@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from soaplun import cleanup, mailbox
+from soapalin import cleanup, mailbox
 
 
 class CheckpointTests(unittest.TestCase):

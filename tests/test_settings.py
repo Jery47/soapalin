@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from soaplun import inventory as inventory_module
-from soaplun import settings as settings_module
-from soaplun.config import Config
+from soapalin import inventory as inventory_module
+from soapalin import settings as settings_module
+from soapalin.config import Config
 
 
 class FakeDestination:

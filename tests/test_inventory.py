@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from soaplun import inventory as inventory_module
-from soaplun.config import Config
-from soaplun.inventory import (
+from soapalin import inventory as inventory_module
+from soapalin.config import Config
+from soapalin.inventory import (
     _domain_entries,
     account_domain,
     as_list,

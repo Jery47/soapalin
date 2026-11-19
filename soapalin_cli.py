@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CLI entry point for soapalin."""
 
-from soaplun.cli import main
+from soapalin.cli import main
 
 
 if __name__ == "__main__":

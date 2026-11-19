@@ -3,8 +3,8 @@ import unittest
 from contextlib import contextmanager
 from unittest import mock
 
-from soaplun import apply as apply_module
-from soaplun.apply import (
+from soapalin import apply as apply_module
+from soapalin.apply import (
     _add_alias,
     _add_dl_member,
     _create_account,
@@ -15,7 +15,7 @@ from soaplun.apply import (
     _set_delegated_sender,
     _set_password,
 )
-from soaplun.config import Config
+from soapalin.config import Config
 
 
 class FakeSession:

@@ -14,8 +14,8 @@ Briefly describe the changes.
 ## Checks
 
 - [ ] `pytest` passes
-- [ ] `ruff check soaplun tests` passes
-- [ ] `mypy soaplun` passes
+- [ ] `ruff check soapalin tests` passes
+- [ ] `mypy soapalin` passes
 - [ ] `python soapalin.py -h` was checked if the CLI changed
 - [ ] Tests do not require a real Zimbra server
 

@@ -72,7 +72,7 @@ class JobStore:
         directory = self._job_dir(spec["id"])
         log_path = directory / "job.log"
         env = dict(os.environ)
-        env["SOAPLUN_HOME"] = str(spec.get("base_dir") or self.config.base_dir)
+        env["SOAPALIN_HOME"] = str(spec.get("base_dir") or self.config.base_dir)
         log_file = log_path.open("ab")
         try:
             kwargs: Dict[str, Any] = {
@@ -90,7 +90,7 @@ class JobStore:
                 [
                     sys.executable,
                     "-m",
-                    "soaplun",
+                    "soapalin",
                     "--job-worker",
                     str(directory / "spec.json"),
                 ],

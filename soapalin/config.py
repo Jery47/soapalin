@@ -262,7 +262,7 @@ class Config:
     )
 
     def __init__(self, base_dir: Optional[Union[Path, str]] = None):
-        env_home = os.environ.get("SOAPLUN_HOME")
+        env_home = os.environ.get("SOAPALIN_HOME")
         self.base_dir = Path(base_dir or env_home or Path(__file__).resolve().parent.parent)
         self.config_dir = self.base_dir / "config"
         self.data_dir = self.base_dir / "data"

@@ -6,10 +6,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from soaplun import mailbox as mailbox_module
-from soaplun.apply import a_list, check_safety, random_password
-from soaplun.config import Config
-from soaplun.mailbox import (
+from soapalin import mailbox as mailbox_module
+from soapalin.apply import a_list, check_safety, random_password
+from soapalin.config import Config
+from soapalin.mailbox import (
     CONTENT_SPECS,
     MailboxError,
     backend_info,
@@ -47,7 +47,7 @@ class MailboxTests(unittest.TestCase):
     def test_cleanup_partial_archives(self):
         import tempfile
 
-        from soaplun.config import Config
+        from soapalin.config import Config
 
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)
@@ -552,7 +552,7 @@ class ParallelismTests(unittest.TestCase):
 
 
     def test_since_query_converts_iso_date(self):
-        from soaplun.mailbox import since_query
+        from soapalin.mailbox import since_query
         self.assertEqual(since_query("2026-11-01"), "date:>=11/01/2026")
         self.assertEqual(since_query(""), "")
         with self.assertRaises(Exception):

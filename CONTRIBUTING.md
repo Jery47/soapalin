@@ -22,16 +22,16 @@ Before opening a pull request:
 
 ```bash
 pytest
-ruff check soaplun tests
-mypy soaplun
+ruff check soapalin tests
+mypy soapalin
 ```
 
 If the CLI changes:
 
 ```bash
-python soapalin.py -h
-python soapalin.py migrate -h
-python soapalin.py provision -h
+python soapalin_cli.py -h
+python soapalin_cli.py migrate -h
+python soapalin_cli.py provision -h
 ```
 
 ## Development rules

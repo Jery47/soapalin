@@ -3,9 +3,9 @@ import tempfile
 import unittest
 import urllib.error
 
-from soaplun.config import Config
-from soaplun.connections import ZimbraSession, describe_error
-from soaplun.rest import RestError
+from soapalin.config import Config
+from soapalin.connections import ZimbraSession, describe_error
+from soapalin.rest import RestError
 
 
 class DescribeErrorTests(unittest.TestCase):

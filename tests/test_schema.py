@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from soaplun.config import Config
-from soaplun.inventory import load_snapshot
-from soaplun.schema import SchemaError, validate_plan, validate_snapshot
+from soapalin.config import Config
+from soapalin.inventory import load_snapshot
+from soapalin.schema import SchemaError, validate_plan, validate_snapshot
 
 
 class SchemaTests(unittest.TestCase):

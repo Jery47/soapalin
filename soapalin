@@ -1,8 +1,0 @@
-#!/usr/bin/env sh
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-for vpy in "$ROOT/venv/bin/python" "$ROOT/.venv/bin/python"; do
-  if [ -x "$vpy" ]; then
-    exec "$vpy" "$ROOT/soapalin.py" "$@"
-  fi
-done
-exec python3 "$ROOT/soapalin.py" "$@"

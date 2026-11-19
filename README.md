@@ -50,8 +50,8 @@ python -m pip install -e .
 ```bash
 python -m pip install -e ".[dev]"
 pytest
-ruff check soaplun tests
-mypy soaplun
+ruff check soapalin tests
+mypy soapalin
 ```
 
 The `install.sh`, `install.ps1`, `uninstall.sh`, and `uninstall.ps1` scripts
@@ -317,8 +317,8 @@ These directories are ignored by Git.
 
 ```bash
 pytest
-pytest --cov=soaplun --cov-report=term-missing
-ruff check soaplun tests
-mypy soaplun
+pytest --cov=soapalin --cov-report=term-missing
+ruff check soapalin tests
+mypy soapalin
 python -m unittest discover -s tests
 ```

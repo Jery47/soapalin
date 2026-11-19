@@ -69,10 +69,10 @@ jobs:
           python -m pip install -e ".[dev]"
 
       - name: Ruff
-        run: ruff check soaplun tests
+        run: ruff check soapalin tests
 
       - name: Mypy
-        run: mypy soaplun
+        run: mypy soapalin
 
   package:
     name: Build package

@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from soaplun import jobs as jobs_module
-from soaplun.config import Config
+from soapalin import jobs as jobs_module
+from soapalin.config import Config
 
 
 class JobStoreTests(unittest.TestCase):

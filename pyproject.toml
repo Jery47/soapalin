@@ -22,19 +22,19 @@ dev = [
 ]
 
 [project.scripts]
-soapalin = "soaplun.cli:main"
+soapalin = "soapalin.cli:main"
 
 [tool.setuptools.dynamic]
-version = {attr = "soaplun.__version__"}
+version = {attr = "soapalin.__version__"}
 
 [tool.setuptools.packages.find]
 namespaces = true
-include = ["soaplun*", "vendor*"]
+include = ["soapalin*", "vendor*"]
 
 [tool.ruff]
 target-version = "py38"
 line-length = 100
-src = ["soaplun", "tests"]
+src = ["soapalin", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -42,15 +42,15 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["soaplun"]
+files = ["soapalin"]
 
 ignore_missing_imports = true
 follow_imports = "skip"
 warn_unused_ignores = false
 
 [tool.coverage.run]
-source = ["soaplun"]
-omit = ["soaplun/__main__.py"]
+source = ["soapalin"]
+omit = ["soapalin/__main__.py"]
 
 [tool.coverage.report]
 show_missing = true

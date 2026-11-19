@@ -3,11 +3,11 @@
 #
 #   sudo ./install.sh
 #
-# The CLI is installed under /opt/soaplun (or SOAPLUN_DIR). It runs as the
+# The CLI is installed under /opt/soapalin (or SOAPALIN_DIR). It runs as the
 # "zimbra" user when possible so zmmailbox can export/import mailboxes locally.
 set -euo pipefail
 
-APP_DIR="${SOAPLUN_DIR:-/opt/soaplun}"
+APP_DIR="${SOAPALIN_DIR:-/opt/soapalin}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -25,15 +25,18 @@ PY_VERSION="$("${PYTHON_BIN}" -c 'import sys; print("%d.%d.%d" % sys.version_inf
 log "Installation dans ${APP_DIR}"
 mkdir -p "${APP_DIR}/config" "${APP_DIR}/data"
 
+mkdir -p "${APP_DIR}/bin"
+
 if [[ "${SCRIPT_DIR}" != "${APP_DIR}" ]]; then
-  for item in soapalin soapalin.py soaplun vendor requirements.txt pyproject.toml README.md \
+  for item in soapalin_cli.py soapalin vendor requirements.txt pyproject.toml README.md \
               install.sh uninstall.sh; do
     [[ -e "${SCRIPT_DIR}/${item}" ]] || die "Element manquant : ${SCRIPT_DIR}/${item}"
     cp -a "${SCRIPT_DIR}/${item}" "${APP_DIR}/"
   done
+  cp -a "${SCRIPT_DIR}/bin/soapalin" "${APP_DIR}/bin/soapalin"
 fi
 
-chmod 755 "${APP_DIR}/soapalin" "${APP_DIR}/install.sh" "${APP_DIR}/uninstall.sh" 2>/dev/null || true
+chmod 755 "${APP_DIR}/bin/soapalin" "${APP_DIR}/install.sh" "${APP_DIR}/uninstall.sh" 2>/dev/null || true
 chown -R zimbra:zimbra "${APP_DIR}"
 chmod 700 "${APP_DIR}/config"
 chmod 700 "${APP_DIR}/data"
@@ -57,7 +60,7 @@ log "Termine"
 cat <<EOF
 
 Commande CLI :
-  ${APP_DIR}/soapalin server list
+  ${APP_DIR}/bin/soapalin server list
 
 Fichiers :
   Configuration : ${APP_DIR}/config/

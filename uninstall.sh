@@ -7,7 +7,7 @@
 #   sudo ./uninstall.sh --yes        # without confirmation
 set -euo pipefail
 
-APP_DIR="${SOAPLUN_DIR:-/opt/soaplun}"
+APP_DIR="${SOAPALIN_DIR:-/opt/soapalin}"
 PURGE=0
 ASSUME_YES=0
 
@@ -21,7 +21,7 @@ Options :
   --help, -h    Affiche cette aide.
 
 Variables :
-  SOAPLUN_DIR   Repertoire d'installation (defaut : /opt/soaplun).
+  SOAPALIN_DIR   Repertoire d'installation (defaut : /opt/soapalin).
 EOF
 }
 
@@ -39,7 +39,7 @@ for arg in "$@"; do
 done
 
 [[ "${EUID}" -eq 0 ]] || die "Ce script doit etre lance en root (sudo ./uninstall.sh)."
-[[ -n "${APP_DIR}" && "${APP_DIR}" != "/" ]] || die "SOAPLUN_DIR invalide : ${APP_DIR}"
+[[ -n "${APP_DIR}" && "${APP_DIR}" != "/" ]] || die "SOAPALIN_DIR invalide : ${APP_DIR}"
 case "${APP_DIR}" in
   /|/bin|/boot|/dev|/etc|/home|/lib|/lib64|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var)
     die "Refus de desinstaller depuis un repertoire systeme : ${APP_DIR}"
@@ -47,7 +47,7 @@ case "${APP_DIR}" in
 esac
 
 if [[ "${PURGE}" -eq 1 ]]; then
-  [[ -d "${APP_DIR}/soaplun" ]] \
+  [[ -d "${APP_DIR}/soapalin" ]] \
     || die "${APP_DIR} ne ressemble pas a une installation de soapalin ; --purge annule."
   warn "Mode --purge : la configuration et TOUTES les donnees seront supprimees."
 else
@@ -71,7 +71,7 @@ if [[ -d "${APP_DIR}" ]]; then
   else
     log "Suppression du code et du venv dans ${APP_DIR}"
     for item in \
-      soapalin soapalin.py soaplun vendor tests \
+      soapalin soapalin_cli.py soapalin vendor tests bin \
       requirements.txt pyproject.toml README.md \
       install.sh uninstall.sh venv
     do

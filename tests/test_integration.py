@@ -17,11 +17,11 @@ try:
     from cryptography.x509.oid import NameOID
 except ImportError as exc:  # pragma: no cover - depends on the test env
     raise unittest.SkipTest("cryptography is required for integration tests") from exc
-from soaplun import apply as apply_module
-from soaplun import rest as rest_module
-from soaplun.config import Config
-from soaplun.connections import ReadOnlyViolation, guard_read_only, is_read_only_request
-from soaplun.rest import RestClient
+from soapalin import apply as apply_module
+from soapalin import rest as rest_module
+from soapalin.config import Config
+from soapalin.connections import ReadOnlyViolation, guard_read_only, is_read_only_request
+from soapalin.rest import RestClient
 
 
 class FakeZimbraSession:

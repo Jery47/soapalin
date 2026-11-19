@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from soaplun.config import (
+from soapalin.config import (
     Config,
     clean_host,
     deep_merge,
@@ -12,7 +12,7 @@ from soaplun.config import (
     store_admin_port,
     store_host,
 )
-from soaplun.connections import _merge_test_overrides
+from soapalin.connections import _merge_test_overrides
 
 
 class ConfigTests(unittest.TestCase):

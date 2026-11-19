@@ -106,9 +106,9 @@ if ($ProjectDir -ne $InstallDir) {
     Write-Step "Copie de la CLI vers $InstallDir"
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     $items = @(
-        "soapalin.py",
+        "soapalin_cli.py",
         "soapalin.cmd",
-        "soaplun",
+        "soapalin",
         "vendor",
         "requirements.txt",
         "pyproject.toml",

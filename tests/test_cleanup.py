@@ -8,10 +8,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from soaplun import cleanup, storage
-from soaplun.commands import clean as clean_cmd
-from soaplun.config import Config
-from soaplun.jobs import JobStore
+from soapalin import cleanup, storage
+from soapalin.commands import clean as clean_cmd
+from soapalin.config import Config
+from soapalin.jobs import JobStore
 
 
 def _set_age(path: Path, days: int) -> None:
@@ -196,12 +196,12 @@ class CleanupPlanTests(unittest.TestCase):
             {"id": "10", "rid": "1", "path": "/old"},
             {"id": "20", "rid": "", "path": "/Files shared with me"},
         ]
-        with mock.patch("soaplun.config.Config", return_value=config), mock.patch(
-            "soaplun.cli.read_users", return_value=["u@example.com"]
+        with mock.patch("soapalin.config.Config", return_value=config), mock.patch(
+            "soapalin.cli.read_users", return_value=["u@example.com"]
         ), mock.patch(
-            "soaplun.connections.ZimbraSession", return_value=Session()
+            "soapalin.connections.ZimbraSession", return_value=Session()
         ), mock.patch(
-            "soaplun.inventory.collect_mountpoints", return_value=links
+            "soapalin.inventory.collect_mountpoints", return_value=links
         ), contextlib.redirect_stdout(io.StringIO()):
             result = clean_cmd.run(args)
         self.assertEqual(result, 0)
@@ -242,12 +242,12 @@ class CleanupPlanTests(unittest.TestCase):
             {"id": "10", "rid": "1", "path": "/old"},
             {"id": "20", "rid": "", "path": "/Files shared with me"},
         ]
-        with mock.patch("soaplun.config.Config", return_value=config), mock.patch(
-            "soaplun.cli.read_users", return_value=["u@example.com"]
+        with mock.patch("soapalin.config.Config", return_value=config), mock.patch(
+            "soapalin.cli.read_users", return_value=["u@example.com"]
         ), mock.patch(
-            "soaplun.connections.ZimbraSession", return_value=Session()
+            "soapalin.connections.ZimbraSession", return_value=Session()
         ), mock.patch(
-            "soaplun.inventory.collect_mountpoints", return_value=links
+            "soapalin.inventory.collect_mountpoints", return_value=links
         ), contextlib.redirect_stdout(io.StringIO()):
             result = clean_cmd.run(args)
         self.assertEqual(result, 0)
@@ -264,7 +264,7 @@ class CleanupPlanTests(unittest.TestCase):
             keep_last=0,
             dry_run=True,
         )
-        with mock.patch("soaplun.config.Config", return_value=self.config):
+        with mock.patch("soapalin.config.Config", return_value=self.config):
             result = clean_cmd.run(args)
         self.assertEqual(result, 0)
         self.assertTrue(old.exists())

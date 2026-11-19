@@ -7,9 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from soaplun import cli, inventory
-from soaplun.commands import migrate as migrate_cmd
-from soaplun.config import Config
+from soapalin import cli, inventory
+from soapalin.commands import migrate as migrate_cmd
+from soapalin.config import Config
 
 
 class CliHelperTests(unittest.TestCase):
@@ -516,7 +516,7 @@ class NewCliParserTests(unittest.TestCase):
         ), mock.patch.object(
             cli, "_build_plan", return_value=plan
         ), mock.patch(
-            "soaplun.apply.apply_plan", return_value={"summary": {}}
+            "soapalin.apply.apply_plan", return_value={"summary": {}}
         ) as apply, mock.patch.object(
             cli, "_print_summary", return_value=0
         ):
@@ -904,7 +904,7 @@ class CliJobCommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.config = Config(self.tmp.name)
-        self.store = __import__("soaplun.jobs", fromlist=["JobStore"]).JobStore(self.config)
+        self.store = __import__("soapalin.jobs", fromlist=["JobStore"]).JobStore(self.config)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -920,13 +920,13 @@ class CliJobCommandTests(unittest.TestCase):
         )
         self.store.update(second["id"], status="failed")
         output = io.StringIO()
-        with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
+        with mock.patch("soapalin.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
             self.assertEqual(cli.main(["job", "list", "--failed"]), 0)
         text = output.getvalue()
         self.assertIn(second["id"], text)
         self.assertNotIn(first["id"], text)
         output = io.StringIO()
-        with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
+        with mock.patch("soapalin.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
             self.assertEqual(cli.main(["job", "list"]), 0)
         text = output.getvalue()
         self.assertIn("DUREE", text)
@@ -938,14 +938,14 @@ class CliJobCommandTests(unittest.TestCase):
         path.write_text("one\ntwo\nthree\n", encoding="utf-8")
         self.store.update(spec["id"], status="succeeded", started_at="2026-01-01T10:00:00", finished_at="2026-01-01T10:01:00")
         output = io.StringIO()
-        with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
+        with mock.patch("soapalin.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
             self.assertEqual(
                 cli.main(["job", "status", spec["id"], "--tail", "2"]), 0
             )
         self.assertIn("two", output.getvalue())
         self.assertIn("three", output.getvalue())
         output = io.StringIO()
-        with mock.patch("soaplun.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
+        with mock.patch("soapalin.config.Config", return_value=self.config), contextlib.redirect_stdout(output):
             self.assertEqual(cli.main(["job", "log", spec["id"]]), 0)
         self.assertEqual(output.getvalue().splitlines(), ["one", "two", "three"])
 

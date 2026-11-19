@@ -15,7 +15,7 @@ def _safe_filename(email: str) -> str:
 
 def _register_run_dir(config: config_module.Config, run_dir: Path) -> None:
     """Record the active run directory in the background job state."""
-    job_id = os.environ.get("SOAPLUN_JOB_ID", "")
+    job_id = os.environ.get("SOAPALIN_JOB_ID", "")
     if not job_id:
         return
     try:

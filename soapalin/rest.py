@@ -103,7 +103,7 @@ class RestClient:
                 urllib.parse.quote(auth_token, safe=""),
             )
         request = urllib.request.Request(url, data=data, method=method)
-        request.add_header("User-Agent", "soaplun/0.1")
+        request.add_header("User-Agent", "soapalin/0.1")
         for key, value in (headers or {}).items():
             request.add_header(key, value)
         try:
@@ -240,7 +240,7 @@ class RestClient:
         with source.open("rb") as handle:
             reader = _ProgressReader(handle)
             request = urllib.request.Request(url, data=reader, method="POST")
-            request.add_header("User-Agent", "soaplun/0.1")
+            request.add_header("User-Agent", "soapalin/0.1")
             request.add_header("Content-Length", str(size))
             for key, value in headers.items():
                 request.add_header(key, value)

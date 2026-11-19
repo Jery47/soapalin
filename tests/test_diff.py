@@ -1,8 +1,8 @@
 import tempfile
 import unittest
 
-from soaplun.config import Config
-from soaplun.diff import (
+from soapalin.config import Config
+from soapalin.diff import (
     RESOURCE_HANDLED,
     changed_attrs,
     dl_attrs,
