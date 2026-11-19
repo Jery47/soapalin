@@ -1,24 +1,24 @@
-## Résumé
+## Summary
 
-Décrire brièvement les changements.
+Briefly describe the changes.
 
-## Type de changement
+## Change type
 
-- [ ] Correction de bug
-- [ ] Nouvelle fonctionnalité
+- [ ] Bug fix
+- [ ] New feature
 - [ ] Refactoring
 - [ ] Documentation
 - [ ] Tests
 - [ ] Packaging / CI
 
-## Vérifications
+## Checks
 
-- [ ] `pytest` passe
-- [ ] `ruff check soaplun tests` passe
-- [ ] `mypy soaplun` passe
-- [ ] `python soapalin.py -h` a été vérifié si la CLI change
-- [ ] Les tests ne dépendent pas d'un serveur Zimbra réel
+- [ ] `pytest` passes
+- [ ] `ruff check soaplun tests` passes
+- [ ] `mypy soaplun` passes
+- [ ] `python soapalin.py -h` was checked if the CLI changed
+- [ ] Tests do not require a real Zimbra server
 
 ## Notes
 
-Ajouter les détails utiles pour la revue.
+Add any useful details for reviewers.

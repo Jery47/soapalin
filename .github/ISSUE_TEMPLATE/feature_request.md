@@ -1,34 +1,34 @@
 ---
-name: Demande d'évolution
-about: Proposer une amélioration ou une nouvelle fonctionnalité
+name: Feature request
+about: Propose an improvement or a new feature
 title: "[Feature] "
 labels: ["enhancement"]
 assignees: []
 ---
 
-## Besoin
+## Need
 
-Décrire le besoin ou le problème à résoudre.
+Describe the need or problem to solve.
 
-## Solution proposée
+## Proposed solution
 
-Décrire la syntaxe ou le comportement souhaité.
+Describe the expected syntax or behavior.
 
 ```powershell
-# exemple de commande envisagée
+# example command
 ```
 
 ## Alternatives
 
-Décrire les solutions ou contournements déjà envisagés.
+Describe alternatives or workarounds already considered.
 
 ## Impact
 
 - [ ] CLI
 - [ ] Provisioning
-- [ ] Migration de comptes
-- [ ] Migration de ressources
-- [ ] Migration de DL
+- [ ] Account migration
+- [ ] Resource migration
+- [ ] Distribution-list migration
 - [ ] Jobs
 - [ ] Documentation
 - [ ] Tests

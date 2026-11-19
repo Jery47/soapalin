@@ -1,11 +1,11 @@
 #requires -Version 5.0
 <#
 .SYNOPSIS
-    Desinstalle la CLI soapalin.
+    Uninstall the soapalin CLI.
 
 .DESCRIPTION
-    Par defaut, le venv est supprime et config\ / data\ sont conserves.
-    -Purge supprime aussi config\ et data\.
+    By default, the virtual environment is removed and config\ / data\ are kept.
+    -Purge also removes config\ and data\.
 #>
 [CmdletBinding()]
 param(

@@ -1,6 +1,6 @@
 ---
-name: Rapport de bug
-about: Signaler un comportement incorrect de soapalin
+name: Bug report
+about: Report incorrect soapalin behavior
 title: "[Bug] "
 labels: ["bug"]
 assignees: []
@@ -8,31 +8,31 @@ assignees: []
 
 ## Description
 
-Décrire clairement le problème.
+Clearly describe the problem.
 
-## Commande exécutée
+## Command executed
 
 ```powershell
-# coller la commande exacte
+# paste the exact command
 ```
 
-## Résultat obtenu
+## Actual result
 
 ```text
-# sortie ou erreur
+# output or error
 ```
 
-## Résultat attendu
+## Expected result
 
-Décrire le comportement attendu.
+Describe the expected behavior.
 
-## Environnement
+## Environment
 
-- OS :
-- Version de Python :
-- Version de soapalin :
-- Type de serveur Zimbra source/destination :
+- OS:
+- Python version:
+- soapalin version:
+- Zimbra source/destination type:
 
-## Contexte supplémentaire
+## Additional context
 
-Ajouter les logs ou rapports utiles, sans identifiants ni mots de passe.
+Add relevant logs or reports, without credentials or passwords.

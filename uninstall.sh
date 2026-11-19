@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Desinstalle la CLI soapalin du serveur Zimbra.
+# Uninstall the soapalin CLI from a Zimbra server.
 #
-#   sudo ./uninstall.sh              # retire le code et le venv
-#                                    # conserve config/ et data/
-#   sudo ./uninstall.sh --purge      # supprime aussi config/ et data/
-#   sudo ./uninstall.sh --yes        # sans confirmation
+#   sudo ./uninstall.sh              # remove code and virtual environment
+#                                    # keep config/ and data/
+#   sudo ./uninstall.sh --purge      # also remove config/ and data/
+#   sudo ./uninstall.sh --yes        # without confirmation
 set -euo pipefail
 
 APP_DIR="${SOAPLUN_DIR:-/opt/soaplun}"

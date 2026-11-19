@@ -1,25 +1,25 @@
 # soapalin
 
-Outil CLI de duplication, de provisioning et de migration de serveurs Zimbra.
+CLI tool for duplicating, provisioning, and migrating Zimbra servers.
 
-La source est toujours lue en lecture seule. La destination est uniquement
-complétée, jamais vidée. L'outil est conçu pour les migrations de comptes, de
-ressources calendrier et de listes de distribution.
+The source server is always read-only. The destination is additive only: data is
+created or updated, never deleted automatically. The tool supports account,
+calendar-resource, and distribution-list migrations.
 
-## Fonctionnalités
+## Features
 
-- gestion multi-serveurs avec un fichier `config/servers/<label>.json` ;
-- inventaire source et destination en lecture seule ;
-- provisioning des domaines, COS, listes, ressources et comptes ;
-- migration des boîtes, agendas, contacts, tâches, briefcase, tags et réglages ;
-- migration des partages et des mountpoints acceptés ;
-- création des dossiers vides, couleurs et tags personnalisés ;
-- jobs en arrière-plan avec journaux et reprise ;
-- nettoyage des données temporaires et des partages destination.
+- Multi-server configuration with `config/servers/<label>.json`.
+- Read-only source and destination inventories.
+- Provisioning for domains, COS, distribution lists, resources, and accounts.
+- Mailbox, calendar, contacts, tasks, briefcase, tags, and settings migration.
+- Outgoing shares and accepted incoming mountpoints.
+- Empty-folder creation, folder colors, and custom tag colors.
+- Background jobs with logs, status, and resume support.
+- Cleanup for temporary data and destination share mountpoints.
 
 ## Installation
 
-Prerequis : Python 3.8 ou superieur.
+Requirement: Python 3.8 or newer.
 
 ### Linux / Zimbra
 
@@ -29,7 +29,7 @@ python3 -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -e .
 
-# ou installation dediee sur le serveur Zimbra
+# Or install on a Zimbra server
 sudo ./install.sh
 ```
 
@@ -41,11 +41,11 @@ python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -e .
 
-# ou installation dediee
+# Or install locally
 .\install.ps1
 ```
 
-### Developpement
+### Development
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -54,10 +54,10 @@ ruff check soaplun tests
 mypy soaplun
 ```
 
-Les scripts `install.sh`, `install.ps1`, `uninstall.sh` et `uninstall.ps1`
-permettent une installation dediee sur un serveur Zimbra ou sous Windows.
+The `install.sh`, `install.ps1`, `uninstall.sh`, and `uninstall.ps1` scripts
+provide standalone installation on a Zimbra server or Windows.
 
-## Démarrage rapide
+## Quick start
 
 ```bash
 soapalin server add src1 --role source
@@ -79,7 +79,7 @@ soapalin migrate users.csv \
   --to dst1
 ```
 
-## Serveurs
+## Servers
 
 ```bash
 soapalin server add src1 --role source
@@ -97,9 +97,9 @@ soapalin server rename src1 zimbra-prod
 soapalin server remove src1
 ```
 
-Les inventaires sont collectés sans statistiques de boîtes par défaut.
-`--stats` active `GetMailbox` par compte pour récupérer les tailles et volumes.
-`--no-stats` reste accepté pour compatibilité.
+Inventories skip mailbox statistics by default. `--stats` enables `GetMailbox`
+for every account to collect mailbox sizes and message counts. `--no-stats`
+remains accepted for compatibility.
 
 ## Provisioning
 
@@ -114,8 +114,8 @@ soapalin provision users.csv --type account --from src1 --to dst1 --password-fil
 soapalin provision users.csv --type account --from src1 --to dst1 --random-password --keep-admin
 ```
 
-`all` remplace le CSV. Les mappings disponibles sont `--mapping-domain` et
-`--mapping-host`.
+Use `all` instead of a CSV to select every source object. Available mappings are
+`--mapping-domain` and `--mapping-host`.
 
 ## Migration
 
@@ -130,10 +130,10 @@ soapalin migrate lists.csv --type dl --item members --from src1 --to dst1
 soapalin migrate all --type all --item all --from src1 --to dst1
 ```
 
-`--item` est obligatoire. Les valeurs sont séparées par des virgules ; les
-espaces autour des virgules sont tolérés.
+`--item` is required. Values are comma-separated; spaces around commas are
+accepted.
 
-Éléments valides :
+Valid elements:
 
 ```text
 account  : mail calendar contacts tasks briefcase cos folder color settings
@@ -142,14 +142,13 @@ resource : mail calendar folder share
 dl       : members
 ```
 
-`--type all` accepte un CSV de comptes : les comptes sont filtrés par le CSV,
-les ressources et les listes sont traitées en `all`.
+With `--type all`, a partial account CSV is allowed. Accounts are filtered by
+the CSV; resources and distribution lists are selected with `all`.
 
 ### COS
 
-L'élément `cos` applique la COS source aux comptes déjà existants. Les COS
-doivent d'abord être créées sur la destination, puis l'inventaire destination
-doit être rafraîchi :
+The `cos` element applies the source COS to existing accounts. Create the COS
+on the destination first, then refresh the destination inventory:
 
 ```bash
 soapalin --foreground provision all --type cos --from src1 --to dst1
@@ -157,17 +156,17 @@ soapalin --foreground server inventory dst1
 soapalin --foreground migrate users.csv --type account --item cos --from src1 --to dst1
 ```
 
-### Partages
+### Shares
 
-`share` migre les partages sortants et recrée les partages entrants déjà
-acceptés sur la source. Les mountpoints déjà présents sont conservés et leurs
-couleurs sont synchronisées.
+`share` copies outgoing shares and recreates incoming shares already accepted
+on the source. Existing destination mountpoints are kept and their colors are
+synchronized.
 
-### Dossiers et couleurs
+### Folders and colors
 
-- `folder` crée uniquement l'arborescence de dossiers manquante ;
-- `color` applique uniquement les couleurs aux dossiers existants ;
-- `folder` est exécuté avant `color` lorsque les deux sont demandés.
+- `folder` creates only the missing empty folder hierarchy.
+- `color` applies colors to existing folders only.
+- When both are selected, `folder` runs before `color`.
 
 ```bash
 soapalin migrate users.csv --type account --item folder --from src1 --to dst1
@@ -175,7 +174,7 @@ soapalin migrate users.csv --type account --item color --from src1 --to dst1
 soapalin migrate users.csv --type account --item folder,color --from src1 --to dst1
 ```
 
-### Différentiel et reprise
+### Differential and retry
 
 ```bash
 soapalin migrate users.csv --type account \
@@ -187,20 +186,20 @@ soapalin migrate users.csv --type account \
   --from src1 --to dst1 --retry-failed
 ```
 
-## Simulation et options
+## Simulation and options
 
-Les options globales se placent avant la sous-commande :
+Global options go before the subcommand:
 
 ```bash
 soapalin --dry-run migrate users.csv --type account --item all --from src1 --to dst1
 soapalin --foreground migrate users.csv --type account --item mail --from src1 --to dst1
 ```
 
-Options de migration :
+Migration options:
 
 ```text
 --differential [YYYY-MM-DD]
---retry-failed [RAPPORT]
+--retry-failed [REPORT]
 --parallelism N
 --keep-tgz [true|false]
 --keep-tgz-days N
@@ -210,12 +209,11 @@ Options de migration :
 --json
 ```
 
-`--json` n'est autorisé qu'avec `--dry-run`.
+`--json` is allowed only with `--dry-run`.
 
 ## Jobs
 
-Les provisioning, migrations et inventaires sont lancés en arrière-plan par
-défaut.
+Provisioning, migrations, and inventories run as background jobs by default.
 
 ```bash
 soapalin job list
@@ -227,11 +225,11 @@ soapalin job live
 soapalin job stop all
 ```
 
-Les états et journaux sont stockés dans `data/jobs/<id>/`.
+Job state and logs are stored in `data/jobs/<id>/`.
 
-## Nettoyage
+## Cleanup
 
-Données temporaires :
+Temporary data:
 
 ```bash
 soapalin clean --dry-run
@@ -240,7 +238,7 @@ soapalin clean all --older-than 30 --keep-last 5
 soapalin clean snapshots --keep-last 10
 ```
 
-Partages destination :
+Destination shares:
 
 ```bash
 soapalin clean --share users.csv --type account --to dst1 --dry-run
@@ -248,25 +246,24 @@ soapalin clean --share --type account --to dst1 --parallelism 10
 soapalin clean --share users.csv --type account --from src1 --to dst1
 ```
 
-Sans `--from`, tous les mountpoints de partage des comptes sélectionnés sont
-supprimés. Avec `--from`, seuls les mountpoints absents de la source sont
-supprimés.
+Without `--from`, all incoming mountpoints for the selected accounts are
+removed. With `--from`, only mountpoints absent from the source are removed.
 
-## Données locales
+## Local data
 
 ```text
-config/config.json       configuration globale
-config/servers/          serveurs source/destination
-data/snapshots/          inventaires
-data/mailboxes/          archives TGZ temporaires
-data/reports/            rapports JSON/CSV et sauvegardes
-data/jobs/               états et journaux des jobs
-data/trash/              archives déplacées par --directly-clean
+config/config.json       global configuration
+config/servers/          source/destination servers
+data/snapshots/          inventories
+data/mailboxes/          temporary TGZ archives
+data/reports/            JSON/CSV reports and backups
+data/jobs/               job state and logs
+data/trash/              archives moved by --directly-clean
 ```
 
-Ces répertoires sont ignorés par Git.
+These directories are ignored by Git.
 
-## Tests et qualité
+## Tests and quality
 
 ```bash
 pytest
@@ -276,19 +273,19 @@ mypy soaplun
 python -m unittest discover -s tests
 ```
 
-## Intégration GitHub
+## GitHub integration
 
-Le dépôt est prêt pour GitHub Actions :
+The repository is ready for GitHub Actions:
 
 ```text
-.github/workflows/ci.yml       tests, lint et build
-.github/ISSUE_TEMPLATE/        modèles de bug et de demande
+.github/workflows/ci.yml       tests, lint, and build
+.github/ISSUE_TEMPLATE/        bug and feature templates
 .github/pull_request_template.md
 CONTRIBUTING.md
 .gitattributes
 .editorconfig
 ```
 
-## Contribution
+## Contributing
 
-Les instructions de contribution sont décrites dans `CONTRIBUTING.md`.
+See `CONTRIBUTING.md`.

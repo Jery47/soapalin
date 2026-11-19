@@ -1,12 +1,12 @@
-# Contribuer à soapalin
+# Contributing to soapalin
 
-## Prérequis
+## Requirements
 
 - Python 3.8+
 - Git
-- Un environnement virtuel local
+- A local virtual environment
 
-## Installation
+## Setup
 
 ```bash
 python -m venv .venv
@@ -16,9 +16,9 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-## Vérifications obligatoires
+## Required checks
 
-Avant toute pull request :
+Before opening a pull request:
 
 ```bash
 pytest
@@ -26,7 +26,7 @@ ruff check soaplun tests
 mypy soaplun
 ```
 
-Pour toute modification de la CLI :
+If the CLI changes:
 
 ```bash
 python soapalin.py -h
@@ -34,17 +34,17 @@ python soapalin.py migrate -h
 python soapalin.py provision -h
 ```
 
-## Règles de développement
+## Development rules
 
-- La source Zimbra est toujours en lecture seule.
-- La destination est additive : aucun nettoyage implicite de comptes ou de données.
-- Ne pas dépendre d'un serveur Zimbra réel dans les tests.
-- Ajouter ou adapter un test pour toute modification de logique métier.
-- Documenter les changements d'interface dans `README.md`, `AGENTS.md` et les aides CLI concernées.
+- The Zimbra source is always read-only.
+- The destination is additive only; never add implicit cleanup or deletion.
+- Tests must never depend on a real Zimbra server.
+- Add or update tests for every business-logic change.
+- Update `README.md` and CLI help when the interface changes.
 
 ## Pull requests
 
-- Une PR doit rester ciblée sur un sujet.
-- Décrire le besoin, la solution et les vérifications effectuées.
-- Indiquer les limites ou changements de comportement.
-- Ne pas inclure de fichiers de données locaux (`*.csv`, snapshots, rapports, journaux).
+- Keep each pull request focused on one topic.
+- Describe the problem, the solution, and the checks performed.
+- Mention limitations and behavior changes.
+- Do not include local data files (`*.csv`, snapshots, reports, logs).

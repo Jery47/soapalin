@@ -1,18 +1,18 @@
 #requires -Version 5.0
 <#
 .SYNOPSIS
-    Installe la CLI soapalin sur Windows.
+    Install the soapalin CLI on Windows.
 
 .DESCRIPTION
-    Cree un venv Python et installe les dependances de la CLI. Aucune interface
-    web n'est installee. zmmailbox n'existe pas sous Windows ; la copie des
-    boites utilise REST.
+    Create a Python virtual environment and install the CLI dependencies.
+    No web interface is installed. zmmailbox is not available on Windows;
+    mailbox copy uses REST.
 
 .PARAMETER InstallDir
-    Dossier d'installation. Par defaut, le dossier du script.
+    Installation directory. Defaults to the script directory.
 
 .PARAMETER Python
-    Executable Python a utiliser. Autodetection par defaut.
+    Python executable to use. Auto-detected by default.
 #>
 [CmdletBinding()]
 param(
