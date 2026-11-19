@@ -114,8 +114,26 @@ soapalin provision users.csv --type account --from src1 --to dst1 --password-fil
 soapalin provision users.csv --type account --from src1 --to dst1 --random-password --keep-admin
 ```
 
-Use `all` instead of a CSV to select every source object. Available mappings are
-`--mapping-domain` and `--mapping-host`.
+Use `all` instead of a CSV to select every source object.
+
+### Provision parameters
+
+| Parameter | Applies to | Description |
+|---|---|---|
+| `CSV|all` | all types | Source object list, or all source objects. |
+| `--type {account,domain,cos,dl,resource}` | all types | Object type to provision. Required. |
+| `--from LABEL` | all types | Source server label. Required. |
+| `--to LABEL` | all types | Destination server label. Required. |
+| `--mapping-domain CSV` | all types | Source-to-destination domain mapping. |
+| `--mapping-host CSV` | all types | Source-to-destination mail host mapping. |
+| `--parallelism N` | all types | Number of parallel tasks. Default: `1`. |
+| `--keep-admin` | `account` | Preserve destination administrator rights. |
+| `--password PASSWORD` | `account` | Fixed password for created accounts. |
+| `--password-file FILE` | `account` | Read the fixed password from a file. |
+| `--random-password` | `account` | Generate one random password per account. |
+
+Exactly one password option is required for `provision account`.
+
 
 ## Migration
 
@@ -132,6 +150,38 @@ soapalin migrate all --type all --item all --from src1 --to dst1
 
 `--item` is required. Values are comma-separated; spaces around commas are
 accepted.
+
+### Migration parameters
+
+| Parameter | Applies to | Description |
+|---|---|---|
+| `CSV|all` | all types | Account CSV, or `all` for every source object. |
+| `--type {account,resource,dl,all}` | all types | Migration object type. Required. |
+| `--item ELEMENTS` | all types | Comma-separated migration elements. Required. |
+| `--from LABEL` | all types | Source server label. Required. |
+| `--to LABEL` | all types | Destination server label. Required. |
+| `--mapping-domain CSV` | all types | Source-to-destination domain mapping. |
+| `--mapping-host CSV` | all types | Source-to-destination mail host mapping. |
+| `--differential [YYYY-MM-DD]` | `account` | Copy changes since the last run or date. |
+| `--retry-failed [REPORT]` | `account` | Retry failed objects from a report. |
+| `--parallelism N` | all types | Number of parallel tasks. Default: `1`. |
+| `--keep-tgz [true|false]` | `account` | Keep temporary TGZ archives. |
+| `--keep-tgz-days N` | `account` | Retention period for temporary archives. |
+| `--resume` | `account` | Resume the last interrupted mailbox copy. |
+| `--json` | `account` | Emit a JSON report; only with `--dry-run`. |
+
+Global options (`--dry-run`, `--foreground`, `--directly-clean`, `-q`, `-v`,
+`--debug`) must be placed before the `migrate` subcommand.
+
+### `--item` values by type
+
+| `--type` | Valid `--item` elements |
+|---|---|
+| `account` | `mail`, `calendar`, `contacts`, `tasks`, `briefcase`, `cos`, `folder`, `color`, `settings`, `tags`, `filter`, `banlist`, `whitelist`, `share`, `sendas`, `sendonbehalfof` |
+| `resource` | `mail`, `calendar`, `folder`, `share` |
+| `dl` | `members` |
+| `all` | All account, resource, and DL elements. A partial account CSV is allowed. |
+
 
 Valid elements:
 
@@ -272,20 +322,3 @@ ruff check soaplun tests
 mypy soaplun
 python -m unittest discover -s tests
 ```
-
-## GitHub integration
-
-The repository is ready for GitHub Actions:
-
-```text
-.github/workflows/ci.yml       tests, lint, and build
-.github/ISSUE_TEMPLATE/        bug and feature templates
-.github/pull_request_template.md
-CONTRIBUTING.md
-.gitattributes
-.editorconfig
-```
-
-## Contributing
-
-See `CONTRIBUTING.md`.
