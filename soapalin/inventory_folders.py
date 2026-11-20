@@ -84,6 +84,7 @@ def _mountpoint_records(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "zid": str(node.get("zid") or ""),
                 "view": str(node.get("view") or ""),
                 "perm": str(node.get("perm") or ""),
+                "reminder": str(node.get("reminder") or ""),
                 "color": str(node.get("color") or ""),
                 "rgb": str(node.get("rgb") or ""),
             }

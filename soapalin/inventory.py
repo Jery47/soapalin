@@ -713,6 +713,7 @@ def collect_account_settings(
                 share["mountName"] = link.get("name", "")
                 share["mountColor"] = link.get("color", "")
                 share["mountRgb"] = link.get("rgb", "")
+                share["mountReminder"] = link.get("reminder") or "0"
     if need("permissions"):
         try:
             permissions = (mail or account).request("GetPermission", {})

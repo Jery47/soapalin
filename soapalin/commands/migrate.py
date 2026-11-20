@@ -91,6 +91,14 @@ def add_parser(subparsers):
         metavar="YYYY-MM-DD",
     )
     parser.add_argument(
+        "--force-sync",
+        action="store_true",
+        help=(
+            "reimporter les contenus existants avec resolve=modify "
+            "(mail, calendar, contacts, tasks, briefcase)"
+        ),
+    )
+    parser.add_argument(
         "--retry-failed",
         nargs="?",
         const="",

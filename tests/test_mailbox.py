@@ -447,6 +447,90 @@ class IncrementalHelpersTests(unittest.TestCase):
         self.assertEqual(record["skipped_duplicates"], 1)
         self.assertEqual(len(record["chunks"]), 1)
 
+    def test_force_sync_imports_all_items_with_modify_resolve(self):
+        source_client = self._Client(
+            [
+                {"id": "10", "uid": "uid-one"},
+                {"id": "11", "uid": "uid-two"},
+            ]
+        )
+        destination_client = self._Client([{"id": "99", "uid": "uid-one"}])
+        session = type("Session", (), {"mail_client": lambda self, email: source_client})()
+        imports = []
+
+        def fake_export(*args, **kwargs):
+            return {"empty": False, "bytes": 10, "seconds": 0.1, "backend": "rest"}
+
+        def fake_import(*args, **kwargs):
+            imports.append(kwargs)
+            return {"seconds": 0.2}
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            mailbox_module, "export_mailbox", side_effect=fake_export
+        ), mock.patch.object(
+            mailbox_module, "import_mailbox", side_effect=fake_import
+        ):
+            record = mailbox_module._incremental_content_record(
+                None,
+                session,
+                session,
+                source_client,
+                destination_client,
+                "source@example.com",
+                "dest@example.com",
+                "calendar",
+                "Agenda",
+                Path(tmp),
+                [],
+                None,
+                1,
+                1,
+                force_sync=True,
+            )
+        self.assertEqual(record["status"], "ok")
+        self.assertEqual(record["items"], 2)
+        self.assertEqual(record["skipped_duplicates"], 0)
+        self.assertEqual(record["resolve"], "modify")
+        self.assertEqual(imports[0]["resolve"], "modify")
+
+
+    def test_force_full_content_uses_modify_and_skips_deduplication(self):
+        imports = []
+
+        def fake_export(*args, **kwargs):
+            return {"empty": False, "bytes": 10, "seconds": 0.1, "backend": "rest"}
+
+        def fake_import(*args, **kwargs):
+            imports.append(kwargs)
+            return {"seconds": 0.2}
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            mailbox_module, "export_mailbox", side_effect=fake_export
+        ), mock.patch.object(
+            mailbox_module, "import_mailbox", side_effect=fake_import
+        ), mock.patch.object(
+            mailbox_module, "deduplicate_archive"
+        ) as deduplicate:
+            record = mailbox_module._full_content_record(
+                None,
+                None,
+                None,
+                "source@example.com",
+                "dest@example.com",
+                "calendar",
+                "Agenda",
+                Path(tmp),
+                [],
+                None,
+                1,
+                1,
+                True,
+                force_sync=True,
+            )
+        deduplicate.assert_not_called()
+        self.assertEqual(record["resolve"], "modify")
+        self.assertEqual(imports[0]["resolve"], "modify")
+
 
 class ChunkTests(unittest.TestCase):
     def test_chunk_entries_respects_size_and_item_limits(self):

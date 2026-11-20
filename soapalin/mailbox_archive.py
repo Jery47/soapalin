@@ -501,9 +501,12 @@ def import_mailbox(
 ) -> Dict[str, Any]:
     connection = config.connection("destination")
     resolve = (resolve or config.sync().get("mailbox_resolve") or "skip").lower()
-    if resolve not in {"skip", "mod"}:
+    if resolve == "mod":
+        resolve = "modify"
+    if resolve not in {"skip", "modify"}:
         raise MailboxError(
-            "Valeur resolve=%r interdite : utilisez « skip » ou « mod »." % resolve
+            "Valeur resolve=%r interdite : utilisez skip ou modify."
+            % resolve
         )
     if not archive.exists():
         raise MailboxError("Archive introuvable : %s" % archive)

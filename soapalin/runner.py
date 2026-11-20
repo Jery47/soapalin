@@ -32,6 +32,8 @@ def _base_options(config: config_module.Config, args) -> Dict[str, Any]:
         overrides["directly_clean"] = True
     if getattr(args, "resume", False):
         overrides["resume"] = True
+    if getattr(args, "force_sync", False):
+        overrides["force_sync"] = True
     if args.create_user or args.create_resources or args.import_resources:
         if args.password:
             overrides["fixed_password"] = args.password

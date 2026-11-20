@@ -455,6 +455,43 @@ def _filter_archive(
     return target, remaining
 
 
+def _strip_calendar_bodies(archive: Path) -> Path:
+    """Remove appointment MIME bodies from a calendar archive.
+
+    Some exported appointment bodies use multipart/digest MIME that makes
+    Zimbra return HTTP 500 on import.  Appointment metadata is sufficient to
+    recreate the event, so the .appt body members are dropped.
+    """
+    if not archive.exists():
+        return archive
+    part = archive.with_suffix(archive.suffix + ".part")
+    if part.exists():
+        try:
+            part.unlink()
+        except OSError:
+            pass
+    try:
+        with tarfile.open(str(archive), "r|gz") as source, tarfile.open(
+            str(part), "w|gz", format=tarfile.PAX_FORMAT
+        ) as destination:
+            for member in source:
+                if member.name.endswith(".appt"):
+                    continue
+                stream = source.extractfile(member) if member.isfile() else None
+                destination.addfile(member, stream)
+        if not part.exists() or part.stat().st_size == 0:
+            raise MailboxError("Archive calendrier vide apres nettoyage : %s" % part)
+        verify_archive(part)
+        os.replace(part, archive)
+    finally:
+        if part.exists():
+            try:
+                part.unlink()
+            except OSError:
+                pass
+    return archive
+
+
 def deduplicate_archive(
     destination: ZimbraSession,
     email: str,
@@ -569,6 +606,17 @@ TAG_CONTENT_SPECS = {
     "contacts": ("contact", "cn"),
     "tasks": ("task", "task"),
 }
+STRUCTURED_CONTENT = {"calendar"}
+
+
+def _structured_export_body(content: str) -> Optional[int]:
+    """Export calendar items without their original MIME body.
+
+    Zimbra can return a 500 when importing appointment bodies containing
+    multipart/digest invitation MIME. The appointment metadata still carries
+    the event details, and body=0 produces a small stub that imports reliably.
+    """
+    return 0 if content in STRUCTURED_CONTENT else None
 
 
 def _text_value(value: Any) -> str:
@@ -800,8 +848,11 @@ def copy_mailboxes(
         content_types if content_types is not None else sync.get("content_types")
     )
     contents = normalize_content_types(raw_contents)
-    resolve = (sync.get("mailbox_resolve") or "skip").lower()
-    skip_duplicates = _truthy(sync.get("skip_duplicates"), True)
+    force_sync = _truthy(sync.get("force_sync"), False)
+    resolve = "modify" if force_sync else (sync.get("mailbox_resolve") or "skip").lower()
+    skip_duplicates = False if force_sync else _truthy(
+        sync.get("skip_duplicates"), True
+    )
     if skip_duplicates and resolve != "skip":
         resolve = "skip"
     directly_clean = bool(sync.get("directly_clean", False))
@@ -951,6 +1002,7 @@ def copy_mailboxes(
                     source_email,
                     archive,
                     content=content,
+                    body=_structured_export_body(content),
                     progress=lambda done, total_bytes, message: (
                         progress(
                             index - 1,
@@ -964,6 +1016,8 @@ def copy_mailboxes(
                         else None
                     ),
                 )
+                if content in {"calendar", "all"}:
+                    _strip_calendar_bodies(archive)
                 if export_info.get("empty"):
                     record["contents"].append(
                         {
@@ -1058,6 +1112,7 @@ def copy_mailboxes(
                 {
                     "status": "ok",
                     "resolve": resolve,
+                    "force_sync": force_sync,
                     "contents_count": len(record["contents"]),
                 }
             )
@@ -1127,6 +1182,7 @@ def copy_mailboxes(
         "run_dir": str(run_dir),
         "content_types": contents,
         "skip_duplicates": skip_duplicates,
+        "force_sync": force_sync,
         "items": items,
         "summary": counters,
         "total": total,
@@ -1238,6 +1294,7 @@ def _full_content_record(
     total: int,
     skip_duplicates: bool,
     since: str = "",
+    force_sync: bool = False,
 ) -> Dict[str, Any]:
     suffix = "" if content == "all" else "." + content
     archive = run_dir / ("%s%s.tgz" % (_safe_filename(source_email), suffix))
@@ -1251,6 +1308,7 @@ def _full_content_record(
         archive,
         content=content,
         query=since or None,
+        body=_structured_export_body(content),
         progress=lambda done, total_bytes, message: (
             progress(
                 index - 1,
@@ -1261,6 +1319,8 @@ def _full_content_record(
             else None
         ),
     )
+    if content in {"calendar", "all"}:
+        _strip_calendar_bodies(archive)
     if export_info.get("empty"):
         return {
             "content": content,
@@ -1271,7 +1331,7 @@ def _full_content_record(
         }
     dedup_info: Dict[str, Any] = {}
     import_archive = archive
-    if skip_duplicates:
+    if skip_duplicates and not force_sync:
         dedup_info = deduplicate_archive(
             destination, target_email, archive, content=content
         )
@@ -1299,7 +1359,7 @@ def _full_content_record(
         destination,
         target_email,
         import_archive,
-        resolve="skip",
+        resolve="modify" if force_sync else "skip",
         progress=lambda done, total_bytes, message: (
             progress(
                 index - 1,
@@ -1322,6 +1382,7 @@ def _full_content_record(
         "import_seconds": import_info["seconds"],
         "backend_export": export_info["backend"],
         "mode": "full",
+        "resolve": "modify" if force_sync else "skip",
     }
 
 
@@ -1344,12 +1405,16 @@ def _incremental_content_record(
     mailbox_size: int = 0,
     since: str = "",
     presence_cache: Optional[Dict[str, bool]] = None,
+    force_sync: bool = False,
 ) -> Dict[str, Any]:
     mode = "incremental" if compare_destination else "chunked"
-    if not since and config is not None:
+    if force_sync:
+        since = ""
+    elif not since and config is not None:
         since = since_query(config.sync().get("since") or "")
     entries: List[Dict[str, Any]] = []
     source_skipped: List[int] = []
+    import_warnings: List[str] = []
     destination_keys: Set[str] = set()
     header_archive: Optional[Path] = None
 
@@ -1370,6 +1435,7 @@ def _incremental_content_record(
                 total,
                 False,
                 since=since,
+                force_sync=force_sync,
             )
         try:
             if content == "all":
@@ -1398,6 +1464,7 @@ def _incremental_content_record(
                 total,
                 False,
                 since=since,
+                force_sync=force_sync,
             )
             fallback["warnings"] = [
                 "Index source illisible pour %s : export complet de secours (%s)"
@@ -1429,6 +1496,7 @@ def _incremental_content_record(
                 total,
                 True,
                 since=since,
+                force_sync=force_sync,
             )
 
         if content == "mail":
@@ -1488,6 +1556,7 @@ def _incremental_content_record(
                     total,
                     True,
                     since=since,
+                    force_sync=force_sync,
                 )
             entries = _source_structured_entries(
                 source_client, content, since=since
@@ -1512,12 +1581,17 @@ def _incremental_content_record(
             total,
             compare_destination,
             since=since,
+            force_sync=force_sync,
         )
 
     missing = (
-        _missing_entries(entries, destination_keys)
-        if compare_destination
-        else list(entries)
+        list(entries)
+        if force_sync
+        else (
+            _missing_entries(entries, destination_keys)
+            if compare_destination
+            else list(entries)
+        )
     )
     missing_keys = sorted(
         {
@@ -1537,7 +1611,9 @@ def _incremental_content_record(
             "missing_keys": [],
         }
 
-    chunks = _chunk_entries(missing)
+    chunks = _chunk_entries(
+        missing, max_items=10 if content == "calendar" else IMPORT_CHUNK_ITEMS
+    )
     chunk_records: List[Dict[str, Any]] = []
     suffix = "" if content == "all" else "." + content
     total_items = len(missing)
@@ -1590,6 +1666,7 @@ def _incremental_content_record(
             archive,
             content=content,
             query="item:(%s)" % ",".join(chunk_ids),
+            body=_structured_export_body(content),
             progress=lambda done, total_bytes, message: (
                 progress(
                     index - 1,
@@ -1600,6 +1677,8 @@ def _incremental_content_record(
                 else None
             ),
         )
+        if content in {"calendar", "all"}:
+            _strip_calendar_bodies(archive)
         if export_info.get("empty"):
             continue
         _emit_progress(
@@ -1610,22 +1689,81 @@ def _incremental_content_record(
             % (source_email, label, part_number, total_lots),
             detail(),
         )
-        import_info = import_mailbox(
-            config,
-            destination,
-            target_email,
-            archive,
-            resolve="skip",
-            progress=lambda done, total_bytes, message: (
-                progress(
-                    index - 1,
-                    total,
-                    "%s - %s" % (message, human_size(done)),
+        try:
+            import_info = import_mailbox(
+                config,
+                destination,
+                target_email,
+                archive,
+                resolve="modify" if force_sync else "skip",
+                progress=lambda done, total_bytes, message: (
+                    progress(
+                        index - 1,
+                        total,
+                        "%s - %s" % (message, human_size(done)),
+                    )
+                    if progress
+                    else None
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad item must not block a lot
+            if "500" not in describe_error(exc):
+                raise
+            import_warnings.append(
+                "lot %s/%s : echec global (%s), reprise element par element"
+                % (part_number, total_lots, describe_error(exc))
+            )
+            imported_items = 0
+            failed_items: List[str] = []
+            retry_seconds = 0.0
+            for entry in chunk:
+                item_id = str(entry.get("id") or "")
+                if not item_id:
+                    continue
+                item_archive = run_dir / (
+                    "%s%s.%s-item-%s.tgz"
+                    % (
+                        _safe_filename(source_email),
+                        suffix,
+                        mode,
+                        item_id,
+                    )
                 )
-                if progress
-                else None
-            ),
-        )
+                archives.append(item_archive)
+                try:
+                    item_export = export_mailbox(
+                        config,
+                        source,
+                        source_email,
+                        item_archive,
+                        content=content,
+                        query="item:(%s)" % item_id,
+                        body=_structured_export_body(content),
+                    )
+                    if item_export.get("empty"):
+                        continue
+                    if content in {"calendar", "all"}:
+                        _strip_calendar_bodies(item_archive)
+                    item_import = import_mailbox(
+                        config,
+                        destination,
+                        target_email,
+                        item_archive,
+                        resolve="modify" if force_sync else "skip",
+                    )
+                    imported_items += 1
+                    retry_seconds += float(item_import.get("seconds") or 0)
+                except Exception as item_exc:  # noqa: BLE001
+                    failed_items.append(item_id)
+                    import_warnings.append(
+                        "element %s non importe : %s"
+                        % (item_id, describe_error(item_exc))
+                    )
+            import_info = {
+                "seconds": retry_seconds,
+                "items": imported_items,
+                "failed_items": failed_items,
+            }
         done_items += len(chunk_ids)
         done_bytes += chunk_bytes
         done_lots += 1
@@ -1643,6 +1781,8 @@ def _incremental_content_record(
                 "items": len(chunk_ids),
                 "bytes": export_info["bytes"],
                 "import_seconds": import_info["seconds"],
+                "imported_items": import_info.get("items", len(chunk_ids)),
+                "failed_items": import_info.get("failed_items", []),
             }
         )
 
@@ -1656,10 +1796,14 @@ def _incremental_content_record(
         "bytes": sum(record["bytes"] for record in chunk_records),
         "missing_keys": missing_keys,
         "skipped_duplicates": len(entries) - len(missing),
+        "resolve": "modify" if force_sync else "skip",
         "warnings": (
-            ["%d element(s) source illisible(s) ignore(s)" % len(source_skipped)]
-            if source_skipped
-            else []
+            import_warnings
+            + (
+                ["%d element(s) source illisible(s) ignore(s)" % len(source_skipped)]
+                if source_skipped
+                else []
+            )
         ),
     }
 
@@ -1679,6 +1823,7 @@ def _copy_incremental_account(
     compare_destination: bool,
     since: str = "",
     directly_clean: bool = False,
+    force_sync: bool = False,
 ) -> Dict[str, Any]:
     source_email = item.get("source", "")
     target_email = item.get("destination", "")
@@ -1788,6 +1933,7 @@ def _copy_incremental_account(
                 mailbox_size=mailbox_size,
                 since=since,
                 presence_cache=presence_cache,
+                force_sync=force_sync,
             )
             record["contents"].append(content_record)
             record["warnings"].extend(content_record.get("warnings") or [])
@@ -1850,6 +1996,7 @@ def _run_account_tasks(
     since: str = "",
     directly_clean: bool = False,
     checkpoint: Optional[Dict[str, Any]] = None,
+    force_sync: bool = False,
 ) -> List[Dict[str, Any]]:
     profile_id = config.current_profile()
     local = threading.local()
@@ -1881,6 +2028,8 @@ def _run_account_tasks(
             source, destination = sessions()
             try:
                 extra = {"directly_clean": True} if directly_clean else {}
+                if force_sync:
+                    extra["force_sync"] = True
                 return worker(
                     config,
                     item,
@@ -1978,6 +2127,9 @@ def copy_mailboxes_incremental(
     since = since_query(sync.get("since") or "")
     directly_clean = bool(sync.get("directly_clean", False))
     resume = bool(sync.get("resume", False))
+    force_sync = _truthy(sync.get("force_sync"), False)
+    if force_sync:
+        since = ""
     if "all" in contents and compare_destination:
         return copy_mailboxes(
             config,
@@ -2078,6 +2230,7 @@ def copy_mailboxes_incremental(
             "failed": failed,
             "total": requested_total,
         },
+        force_sync=force_sync,
     )
     if not failed and len(completed) >= requested_total:
         _clear_checkpoint(run_dir)
@@ -2105,6 +2258,7 @@ def copy_mailboxes_incremental(
         "content_types": contents,
         "incremental": compare_destination,
         "chunked": not compare_destination,
+        "force_sync": force_sync,
         "parallelism": parallelism,
         "items": items,
         "summary": counters,

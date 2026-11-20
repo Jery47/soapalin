@@ -227,6 +227,8 @@ class IncomingShareTests(unittest.TestCase):
                         "folderPath": "/Calendar",
                         "view": "appointment",
                         "rights": "r",
+                        "mountPath": "/Shared",
+                        "mountReminder": "1",
                     }
                 ]
             },
@@ -245,6 +247,7 @@ class IncomingShareTests(unittest.TestCase):
         self.assertEqual(payload["name"], "Calendar")
         self.assertEqual(payload["view"], "appointment")
         self.assertEqual(payload["perm"], "r")
+        self.assertEqual(payload["reminder"], "1")
 
     def test_incoming_share_uses_source_mount_path(self):
         destination = self.Destination()
@@ -292,6 +295,7 @@ class IncomingShareTests(unittest.TestCase):
                         "folderPath": "/Calendar",
                         "granteeType": "pub",
                         "rights": "r",
+                        "mountPath": "/Calendar",
                         "view": "appointment",
                     },
                     {
@@ -301,6 +305,7 @@ class IncomingShareTests(unittest.TestCase):
                         "granteeType": "usr",
                         "granteeName": "user@example.com",
                         "rights": "rwidx",
+                        "mountPath": "/Calendar",
                         "view": "appointment",
                     },
                 ]
@@ -318,6 +323,123 @@ class IncomingShareTests(unittest.TestCase):
         ][0]
         self.assertEqual(payload["perm"], "rwidx")
         self.assertEqual(payload["name"], "Calendar")
+
+
+    def test_existing_mountpoint_updates_shared_reminder(self):
+        destination = self.Destination(
+            shares=[
+                {
+                    "mid": "mp-1",
+                    "ownerEmail": "owner@example.com",
+                    "folderPath": "/Calendar",
+                }
+            ]
+        )
+        with mock.patch(
+            "soapalin.settings_shares.collect_mountpoints",
+            return_value=[
+                {
+                    "id": "mp-1",
+                    "path": "/Shared",
+                    "color": "",
+                    "rgb": "",
+                    "reminder": "1",
+                }
+            ],
+        ):
+            result = settings_module.copy_incoming_shares(
+                {
+                    "mountpoints": [
+                        {
+                            "mid": "12",
+                            "ownerEmail": "owner@example.com",
+                            "folderPath": "/Calendar",
+                            "mountPath": "/Shared",
+                            "mountReminder": "0",
+                        }
+                    ]
+                },
+                self.Session(),
+                destination,
+                "user@example.com",
+                dry_run=False,
+            )
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(result["errors"], [])
+        call = [
+            item for item in destination.calls if item[0] == "EnableSharedReminder"
+        ]
+        self.assertEqual(
+            call,
+            [("EnableSharedReminder", {"link": {"id": "mp-1", "reminder": "0"}})],
+        )
+
+    def test_existing_mountpoint_keeps_same_shared_reminder(self):
+        destination = self.Destination(
+            shares=[
+                {
+                    "mid": "mp-1",
+                    "ownerEmail": "owner@example.com",
+                    "folderPath": "/Calendar",
+                }
+            ]
+        )
+        with mock.patch(
+            "soapalin.settings_shares.collect_mountpoints",
+            return_value=[
+                {
+                    "id": "mp-1",
+                    "path": "/Shared",
+                    "color": "",
+                    "rgb": "",
+                    "reminder": "0",
+                }
+            ],
+        ):
+            result = settings_module.copy_incoming_shares(
+                {
+                    "mountpoints": [
+                        {
+                            "mid": "12",
+                            "ownerEmail": "owner@example.com",
+                            "folderPath": "/Calendar",
+                            "mountPath": "/Shared",
+                            "mountReminder": "0",
+                        }
+                    ]
+                },
+                self.Session(),
+                destination,
+                "user@example.com",
+                dry_run=False,
+            )
+        self.assertEqual(result["skipped"], 1)
+        self.assertFalse(
+            any(item[0] == "EnableSharedReminder" for item in destination.calls)
+        )
+
+    def test_share_without_mount_path_is_skipped(self):
+        destination = self.Destination()
+        result = settings_module.copy_incoming_shares(
+            {
+                "mountpoints": [
+                    {
+                        "mid": "12",
+                        "ownerEmail": "owner@example.com",
+                        "folderPath": "/Calendar",
+                        "rights": "rwidx",
+                    }
+                ]
+            },
+            self.Session(),
+            destination,
+            "user@example.com",
+            dry_run=False,
+        )
+        self.assertEqual(result["skipped"], 1)
+        self.assertFalse(
+            any(item[0] == "create_mountpoint" for item in destination.calls)
+        )
 
     def test_unaccepted_incoming_share_is_skipped(self):
         destination = self.Destination()

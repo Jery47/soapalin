@@ -181,7 +181,14 @@ def copy_incoming_shares(
     accepted: Dict[Tuple[str, str], Tuple[int, Dict[str, Any]]] = {}
     for share in source_shares:
         # ``mid`` is present for a share that is already mounted/accepted.
+        # ``mountPath`` is only set when the mountpoint is actually present in
+        # the source mailbox tree. GetShareInfo can also return inherited or
+        # stale shares that must not be recreated on the destination.
         if not share.get("mid"):
+            result["skipped"] += 1
+            continue
+        mount_path = str(share.get("mountPath") or "")
+        if not mount_path or mount_path == "/":
             result["skipped"] += 1
             continue
         owner_email = _map_email(effective, share.get("ownerEmail") or "")
@@ -219,11 +226,13 @@ def copy_incoming_shares(
         mount_key = (key[0], key[1], mount_path)
         desired_color = str(share.get("mountColor") or "").strip()
         desired_rgb = str(share.get("mountRgb") or "").strip()
+        desired_reminder = str(share.get("mountReminder") or "").strip()
         current_link = existing.get(mount_key)
         if current_link is not None:
             current_color = str(current_link.get("color") or "").strip()
             current_rgb = str(current_link.get("rgb") or "").strip()
-            changed = (
+            current_reminder = str(current_link.get("reminder") or "0").strip()
+            color_changed = (
                 (desired_rgb and current_rgb != desired_rgb)
                 or (
                     not desired_rgb
@@ -231,28 +240,44 @@ def copy_incoming_shares(
                     and current_color != desired_color
                 )
             )
-            if not changed:
+            reminder_changed = (
+                desired_reminder in {"0", "1"}
+                and current_reminder != desired_reminder
+            )
+            if not color_changed and not reminder_changed:
                 result["skipped"] += 1
                 continue
             if dry_run:
                 result["updated"] += 1
                 continue
-            action = {
-                "op": "color",
-                "id": current_link.get("id"),
-            }
-            if desired_rgb:
-                action["rgb"] = desired_rgb
-            else:
-                action["color"] = desired_color
             try:
-                target.request("FolderAction", {"action": action})
-                current_link["color"] = desired_color
-                current_link["rgb"] = desired_rgb
+                if color_changed:
+                    action = {
+                        "op": "color",
+                        "id": current_link.get("id"),
+                    }
+                    if desired_rgb:
+                        action["rgb"] = desired_rgb
+                    else:
+                        action["color"] = desired_color
+                    target.request("FolderAction", {"action": action})
+                    current_link["color"] = desired_color
+                    current_link["rgb"] = desired_rgb
+                if reminder_changed:
+                    target.request(
+                        "EnableSharedReminder",
+                        {
+                            "link": {
+                                "id": current_link.get("id"),
+                                "reminder": desired_reminder,
+                            }
+                        },
+                    )
+                    current_link["reminder"] = desired_reminder
                 result["updated"] += 1
             except Exception as exc:  # noqa: BLE001
                 result["errors"].append(
-                    "couleur montage %s : %s"
+                    "mise a jour montage %s : %s"
                     % (mount_path, describe_error(exc))
                 )
             continue
@@ -314,6 +339,8 @@ def copy_incoming_shares(
                 link["rgb"] = desired_rgb
             elif desired_color:
                 link["color"] = desired_color
+            if desired_reminder in {"0", "1"}:
+                link["reminder"] = desired_reminder
             target.create_mountpoint(**link)
             existing[mount_key] = {"id": ""}
             result["created"] += 1

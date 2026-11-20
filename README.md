@@ -163,6 +163,7 @@ accepted.
 | `--mapping-domain CSV` | all types | Source-to-destination domain mapping. |
 | `--mapping-host CSV` | all types | Source-to-destination mail host mapping. |
 | `--differential [YYYY-MM-DD]` | `account` | Copy changes since the last run or date. |
+| `--force-sync` | `account`, `resource` | Re-export selected content and re-import it with `resolve=modify`, including existing items. |
 | `--retry-failed [REPORT]` | `account` | Retry failed objects from a report. |
 | `--parallelism N` | all types | Number of parallel tasks. Default: `1`. |
 | `--keep-tgz [true|false]` | `account` | Keep temporary TGZ archives. |
@@ -209,8 +210,8 @@ soapalin --foreground migrate users.csv --type account --item cos --from src1 --
 ### Shares
 
 `share` copies outgoing shares and recreates incoming shares already accepted
-on the source. Existing destination mountpoints are kept and their colors are
-synchronized.
+on the source. Existing destination mountpoints are kept; their colors and
+shared-calendar reminder setting are synchronized from the source.
 
 ### Folders and colors
 
@@ -236,6 +237,22 @@ soapalin migrate users.csv --type account \
   --from src1 --to dst1 --retry-failed
 ```
 
+### Force sync
+
+`--differential` only imports items missing from the destination. To update
+items already present, use `--force-sync`: selected content is exported again
+and imported with `resolve=modify`, without deleting destination data.
+
+```bash
+soapalin migrate users.csv --type account \
+  --item calendar \
+  --from src1 --to dst1 --force-sync
+```
+
+`--force-sync` applies to `mail`, `calendar`, `contacts`, `tasks`, and
+`briefcase`. It takes precedence over `--differential`; it does not modify
+settings or share metadata.
+
 ## Simulation and options
 
 Global options go before the subcommand:
@@ -249,6 +266,7 @@ Migration options:
 
 ```text
 --differential [YYYY-MM-DD]
+--force-sync
 --retry-failed [REPORT]
 --parallelism N
 --keep-tgz [true|false]

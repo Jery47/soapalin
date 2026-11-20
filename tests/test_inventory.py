@@ -238,6 +238,7 @@ class FolderBundleTests(unittest.TestCase):
                                 "name": "Shared",
                                 "rid": "10",
                                 "zid": "owner",
+                                "reminder": "1",
                             }
                         ],
                     }
@@ -250,6 +251,7 @@ class FolderBundleTests(unittest.TestCase):
         self.assertEqual([f["path"] for f in bundle["folders"]], ["/Calendar"])
         self.assertEqual(bundle["shares_out"][0]["folderPath"], "/")
         self.assertEqual(bundle["mountpoints"][0]["path"], "/Shared")
+        self.assertEqual(bundle["mountpoints"][0]["reminder"], "1")
 
 
 class AccountCollectionTests(unittest.TestCase):

@@ -24,6 +24,7 @@ def runtime(args, **extra) -> SimpleNamespace:
         "mapping_host": getattr(args, "mapping_host", ""),
         "directly_clean": bool(getattr(args, "directly_clean", False)),
         "resume": bool(getattr(args, "resume", False)),
+        "force_sync": bool(getattr(args, "force_sync", False)),
         "since": (
             differential.isoformat()
             if differential is not None and hasattr(differential, "isoformat")
@@ -173,7 +174,8 @@ def run_cos(config, args, selected_users) -> int:
             "'soapalin provision all --type cos'." % ", ".join(sorted(missing))
         )
     if not actions:
-        raise RuntimeError("Aucun compte existant avec une COS a appliquer.")
+        cli._out("COS : aucun compte existant a mettre a jour.")
+        return 0
     plan = dict(plan, actions=actions)
     report = apply_plan(
         config,

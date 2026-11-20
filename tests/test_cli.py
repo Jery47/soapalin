@@ -388,6 +388,24 @@ class NewCliParserTests(unittest.TestCase):
             comma_args.elements, ["mail", "calendar", "settings"]
         )
 
+    def test_force_sync_option(self):
+        args = self.parsed(
+            [
+                "migrate",
+                "users.csv",
+                "--type",
+                "account",
+                "--item",
+                "calendar",
+                "--from",
+                "src1",
+                "--to",
+                "dst1",
+                "--force-sync",
+            ]
+        )
+        self.assertTrue(args.force_sync)
+
     def test_item_tolerates_spaces(self):
         args = self.parsed(
             [
@@ -529,6 +547,37 @@ class NewCliParserTests(unittest.TestCase):
         self.assertEqual(len(passed["actions"]), 1)
         self.assertEqual(passed["actions"][0]["payload"]["attrs"], {})
         self.assertEqual(passed["actions"][0]["payload"]["cos_name"], "COS1")
+
+    def test_cos_with_no_applicable_account_is_not_fatal(self):
+        args = SimpleNamespace(
+            from_label="src1",
+            to_label="dst1",
+            dry_run=True,
+            keep_tgz=False,
+            keep_tgz_days=0,
+            parallelism=5,
+            mapping_domain="",
+            mapping_host="",
+            differential=None,
+        )
+        with mock.patch.object(
+            cli,
+            "_load_snapshots",
+            return_value=({}, {"cos": [], "accounts": []}),
+        ), mock.patch.object(
+            cli, "_base_options", return_value={}
+        ), mock.patch.object(
+            cli, "_build_plan", return_value={"actions": [], "options": {}}
+        ), mock.patch.object(
+            cli, "_out"
+        ), mock.patch(
+            "soapalin.apply.apply_plan"
+        ) as apply:
+            self.assertEqual(
+                migrate_cmd._run_cos(mock.Mock(), args, ["u@example.com"]),
+                0,
+            )
+        apply.assert_not_called()
 
     def test_folder_and_color_elements_are_supported(self):
         args = self.parsed(
